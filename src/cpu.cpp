@@ -3,15 +3,8 @@
 #include <unordered_map>
 #include <cpp.h>
 
-//флаги состояния
-const uint8_t FLAG_N = 0x80;  // отрицательный
-const uint8_t FLAG_V = 0x40;  // переполнение
-const uint8_t FLAG_Ig = 0x20; // игнора
-const uint8_t FLAG_B = 0x10;  // прерывание
-const uint8_t FLAG_D = 0x08;  // десятичное
-const uint8_t FLAG_I = 0x04;  // запрет прерывания
-const uint8_t FLAG_Z = 0x02;  // нулевой
-const uint8_t FLAG_C = 0x01;  // переноса
+
+
 
 
 uint8_t CPU::read(uint16_t address) {
@@ -50,7 +43,7 @@ void CPU::log_status() {
 }
 
 void CPU::reset() {
-    PC = (read(0xFFFD) << 8) | read(0xFFFC); // Считывание адреса начального выполнения
+    PC = (read(0xFFFD) << 8) | read(0xFFFC); // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     SP = 0xFD;
     A, X, Y = 0;
     running = true;
@@ -325,7 +318,7 @@ void CPU::execute() {
             LDX(fetch16());
             break;
         case 0xBE:
-            LDX(fetch16() + Y));
+            LDX(fetch16() + Y);
             break;
         case 0xA0:
             LDY(fetch());
@@ -340,7 +333,7 @@ void CPU::execute() {
             LDY(fetch16());
             break;
         case 0xBC:
-            LDY(fetch16() + X));
+            LDY(fetch16() + X);
             break;
         case 0x4A:
             LSR_accumulator();
@@ -355,7 +348,7 @@ void CPU::execute() {
             LSR(fetch16());
             break;
         case 0x5E:
-            LSR(fetch16() + X));
+            LSR(fetch16() + X);
             break;
         case 0x09:
             ORA(fetch());
@@ -406,7 +399,7 @@ void CPU::execute() {
             ROL(fetch16());
             break;
         case 0x3E:
-            ROL(fetch16() + X));
+            ROL(fetch16() + X);
             break;
         case 0x6A:
             ROR_accumulator();
@@ -421,7 +414,7 @@ void CPU::execute() {
             ROR(fetch16());
             break;
         case 0x7E:
-            ROR(fetch16() + X));
+            ROR(fetch16() + X);
             break;
         case 0x40:
             RTI();
@@ -522,7 +515,6 @@ void CPU::execute() {
     }
 }
 
-// Реализация инструкций процессора
 void CPU::ADC(uint8_t operand) {
     uint16_t temp = A + operand + (Getflag(FLAG_C) ? 1 : 0);
     Setflag(FLAG_C, temp > 0xFF);
@@ -594,7 +586,7 @@ void CPU::BPL(uint8_t offset) {
 void CPU::BRK() {
     Setflag(FLAG_I, true);
     stack_push16(PC + 1);
-    stack_push(P | 0x30);
+    stack_push(status | 0x30);
     PC = read16(0xFFFE);
 }
 
@@ -747,7 +739,7 @@ void CPU::PHA() {
 }
 
 void CPU::PHP() {
-    stack_push(P | 0x30);
+     stack_push(status);
 }
 
 void CPU::PLA() {
@@ -757,7 +749,7 @@ void CPU::PLA() {
 }
 
 void CPU::PLP() {
-    P = stack_pop() & ~0x30;
+    status = stack_pop();
 }
 
 void CPU::ROL_accumulator() {
@@ -797,7 +789,7 @@ void CPU::ROR(uint16_t address) {
 }
 
 void CPU::RTI() {
-    P = stack_pop();
+    status = stack_pop();
     PC = stack_pop16();
 }
 
@@ -851,7 +843,7 @@ void CPU::TAY() {
 }
 
 void CPU::TSX() {
-    X = S;
+    X = SP;
     Setflag(FLAG_Z, X == 0);
     Setflag(FLAG_N, (X & 0x80) != 0);
 }
@@ -863,11 +855,39 @@ void CPU::TXA() {
 }
 
 void CPU::TXS() {
-    S = X;
+    SP = X;
 }
 
 void CPU::TYA() {
     A = Y;
     Setflag(FLAG_Z, A == 0);
     Setflag(FLAG_N, (A & 0x80) != 0);
+}
+
+void CPU::stack_push(uint8_t value) {
+    write(0x0100 + SP, value);
+    SP--;
+}
+
+void CPU::stack_push16(uint16_t value) {
+    stack_push((value >> 8) & 0xFF);  // Push high byte
+    stack_push(value & 0xFF);         // Push low byte
+}
+
+uint8_t CPU::stack_pop() {
+    uint8_t value = read(0x0100 + SP + 1);
+    SP++;
+    return value;
+}
+
+uint16_t CPU::stack_pop16() {
+    uint8_t low = stack_pop();        // Pop low byte first
+    uint8_t high = stack_pop();       // Pop high byte
+    return (high << 8) | low;         // Combine into 16-bit value
+}
+
+uint16_t CPU::read16(uint16_t address) {
+    uint8_t low = read(address);
+    uint8_t high = read(address + 1);
+    return (high << 8) | low;
 }

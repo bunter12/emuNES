@@ -1,32 +1,25 @@
 #include <cstdint>
 #include <unordered_map>
+#include <array>
 
-// Константы флагов состояния
-const uint8_t FLAG_N = 0x80;  // отрицательный
-const uint8_t FLAG_V = 0x40;  // переполнение
-const uint8_t FLAG_Ig = 0x20; // игнора
-const uint8_t FLAG_B = 0x10;  // прерывание
-const uint8_t FLAG_D = 0x08;  // десятичное
-const uint8_t FLAG_I = 0x04;  // запрет прерывания
-const uint8_t FLAG_Z = 0x02;  // нулевой
-const uint8_t FLAG_C = 0x01;  // перенос
+const uint8_t FLAG_N = 0x80; 
+const uint8_t FLAG_V = 0x40;  
+const uint8_t FLAG_Ig = 0x20; 
+const uint8_t FLAG_B = 0x10; 
+const uint8_t FLAG_D = 0x08; 
+const uint8_t FLAG_I = 0x04; 
+const uint8_t FLAG_Z = 0x02; 
+const uint8_t FLAG_C = 0x01;  
 
 class CPU {
 public:
     void log_status();
     void reset();
-    void execute();
-    void turn_on();
     void turn_off();
-
-private:
-    uint8_t read(uint16_t address);
-    void write(uint16_t address, uint8_t value);
-    uint8_t fetch();
-    uint16_t fetch16();
+    void turn_on();
+    void execute();
     bool Getflag(uint8_t flag);
     void Setflag(uint8_t flag, bool value);
-
     void ADC(uint8_t operand);
     void AND(uint8_t operand);
     void ASL_accumulator();
@@ -61,8 +54,8 @@ private:
     void LDA(uint8_t operand);
     void LDX(uint8_t operand);
     void LDY(uint8_t operand);
-    void LSR(uint16_t address);
     void LSR_accumulator();
+    void LSR(uint16_t address);
     void ORA(uint8_t operand);
     void PHA();
     void PHP();
@@ -87,13 +80,22 @@ private:
     void TXA();
     void TXS();
     void TYA();
-    // Регистры процессора
-    uint16_t PC;       // Программный счетчик
-    uint8_t SP;        // Указатель стека
-    uint8_t A, X, Y;   // Регистры
-    uint8_t status;    // Регистр состояния
+
+    uint16_t PC;       
+    uint8_t SP;        
+    uint8_t A, X, Y;  
+    uint8_t status;  
     bool running;
 
-    // Память
     std::array<uint8_t, 0x10000> memory;
+
+    uint8_t read(uint16_t address);
+    void write(uint16_t address, uint8_t value);
+    uint8_t fetch();
+    uint16_t fetch16();
+    void stack_push(uint8_t value);
+    void stack_push16(uint16_t value);
+    uint8_t stack_pop();
+    uint16_t stack_pop16(); 
+    uint16_t read16(uint16_t address);
 };
