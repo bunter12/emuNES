@@ -41,7 +41,7 @@ void CPU::log_status() {
 void CPU::reset() {
     PC = (read(0xFFFD) << 8) | read(0xFFFC);
     SP = 0xFD;
-    A, X, Y = 0;
+    A = X = Y = 0;
     running = true;
     status = 0x00;
 }
