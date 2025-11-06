@@ -17,3 +17,7 @@ uint8_t Bus::cpu_read(uint16_t address) {
     }
     return data;
 }
+
+Bus::Bus() {
+    cpu.connect_bus(this);
+}
