@@ -1,6 +1,6 @@
 #include <cassert>
 #include <iostream>
-#include "../include/cpp.h"
+#include "../include/cpu.h"
 #include "../include/ppu.h"
 
 class CPUTest {

@@ -1,11 +1,7 @@
 #include <cstdint>
 #include <iostream>
 #include <unordered_map>
-#include <cpp.h>
-
-
-
-
+#include <cpu.h>
 
 uint8_t CPU::read(uint16_t address) {
     return memory[address];
@@ -43,7 +39,7 @@ void CPU::log_status() {
 }
 
 void CPU::reset() {
-    PC = (read(0xFFFD) << 8) | read(0xFFFC); // ���������� ������ ���������� ����������
+    PC = (read(0xFFFD) << 8) | read(0xFFFC);
     SP = 0xFD;
     A, X, Y = 0;
     running = true;

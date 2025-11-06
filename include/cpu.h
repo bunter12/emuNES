@@ -1,3 +1,5 @@
+#ifndef CPU_H
+#define CPU_H
 #include <cstdint>
 #include <unordered_map>
 #include <array>
@@ -99,3 +101,5 @@ public:
     uint16_t stack_pop16(); 
     uint16_t read16(uint16_t address);
 };
+
+#endif //CPU_H

@@ -1,4 +1,4 @@
-#include "../include/apu.h"
+#include <apu.h>
 
 // Lookup tables
 const uint8_t APU::length_table[32] = {

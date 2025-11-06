@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PPU_H
+#define PPU_H
 #include <iostream>
 #include <array>
 #include <cstdint>
@@ -58,3 +59,5 @@ private:
     void load_background_shifters();
     void evaluate_sprites();
 };
+
+#endif //PPU_H

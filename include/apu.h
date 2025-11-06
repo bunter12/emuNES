@@ -1,4 +1,5 @@
-#pragma once
+#ifndef APU_H
+#define APU_H
 #include <cstdint>
 #include <array>
 
@@ -94,3 +95,5 @@ private:
     static const uint16_t noise_period_table[16];
     static const uint16_t dmc_rate_table[16];
 };
+
+#endif //APU_H
