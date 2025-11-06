@@ -223,7 +223,7 @@ int CPU::clock() {
         BIT(fetch16());
         break;
     case 0x30:
-        int8_t offset = fetch();
+        offset = fetch();
         if (Getflag(FLAG_N)) {
             instruction_cycles++;
             uint16_t target_addr = PC + offset;
