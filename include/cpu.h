@@ -13,13 +13,18 @@ const uint8_t FLAG_I = 0x04;
 const uint8_t FLAG_Z = 0x02; 
 const uint8_t FLAG_C = 0x01;  
 
+class Bus;
+
 class CPU {
 public:
     void log_status();
     void reset();
     void turn_off();
     void turn_on();
-    void execute();
+    int clock();
+    void connect_bus(Bus* b) { bus = b; }
+    
+private:
     bool Getflag(uint8_t flag);
     void Setflag(uint8_t flag, bool value);
     void ADC(uint8_t operand);
@@ -89,8 +94,8 @@ public:
     uint8_t status;  
     bool running;
 
-    std::array<uint8_t, 0x10000> memory;
-
+    Bus* bus = nullptr;
+    
     uint8_t read(uint16_t address);
     void write(uint16_t address, uint8_t value);
     uint8_t fetch();
@@ -100,6 +105,11 @@ public:
     uint8_t stack_pop();
     uint16_t stack_pop16(); 
     uint16_t read16(uint16_t address);
+    
+    uint16_t addr_abs_x(int& cycles);
+    uint16_t addr_abs_y(int& cycles);
+    uint16_t addr_ind_y(int& cycles);
+    uint16_t read16_zeropage(uint16_t address);
 };
 
 #endif //CPU_H
