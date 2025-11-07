@@ -10,13 +10,21 @@ public:
 
     void cpu_write(uint16_t address, uint8_t data);
     uint8_t cpu_read(uint16_t address);
+    
+    bool ppu_read(uint16_t address, uint8_t& data);
+    bool ppu_write(uint16_t address, uint8_t data);
+    
     void insert_cartridge(Cartridge* cartridge);
     CPU cpu;
+    PPU ppu;
+    Cartridge* cart = nullptr;
+    void nmi();
+    
+    
     
 private:
-//    PPU ppu;
-    Cartridge* cart = nullptr;
     std::array<uint8_t, 2048> cpu_ram;
+    
 };
 
 #endif //BUS_H

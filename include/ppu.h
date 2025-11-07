@@ -1,63 +1,77 @@
 #ifndef PPU_H
 #define PPU_H
 #include <iostream>
-#include <array>
 #include <cstdint>
+
+
+
+class Bus;
 
 class PPU {
 public:
-    void write_register(uint16_t address, uint8_t data);
-    uint8_t read_register(uint16_t address);
+    
+    PPU();
+    ~PPU();
+    
+    void connect_bus(Bus* b) { bus = b; }
+    void clock();
 
-    void write_vram(uint16_t address, uint8_t data);
-    uint8_t read_vram(uint16_t address);
-
-    void step();
-    void reset();
-
-    uint32_t* get_screen_buffer();
-    bool get_frame_complete();
-    void render_pixel();
+    uint8_t cpu_read(uint16_t address);
+    void cpu_write(uint16_t address, uint8_t data);
+    
+    uint32_t* get_screen();
+    bool frame_complete = false;
+    
+    uint8_t vram[2048];
+    uint8_t palette_ram[32];
+    uint8_t oam[256];
+    
+    int scanline = 0;
+    int cycle = 0;
+    
+    void log_status();
+    
 private:
-    std::array<uint8_t, 0x4000> vram;
-    std::array<uint8_t, 0x100> oam;
-    std::array<uint8_t, 0x20> palette;
     
-    uint8_t ctrl;
-    uint8_t mask;
-    uint8_t status;
-    uint8_t oam_addr;
-    uint8_t scroll_x;
-    uint8_t scroll_y;
-    uint16_t vram_addr;
-    uint8_t vram_data;
+    uint8_t reg_ctrl = 0x00;
+    uint8_t reg_mask = 0x00;
+    uint8_t reg_status = 0x00;
+    uint8_t oam_addr = 0x00;
     
-    uint16_t temp_vram_addr;
-    bool write_toggle;
-    uint8_t fine_x;
+    uint16_t vram_addr_v = 0x0000;
+    uint16_t vram_addr_t = 0x0000;
+    uint8_t fine_x_scroll = 0;
+    bool address_latch_w = false;
     
-    int scanline;
-    int cycle;
-    bool odd_frame;
+    
+    uint16_t bg_shifter_pattern_lo = 0x0000;
+    uint16_t bg_shifter_pattern_hi = 0x0000;
+    uint16_t bg_shifter_attrib_lo = 0x0000;
+    uint16_t bg_shifter_attrib_hi = 0x0000;
+    
+    uint8_t bg_next_tile_id = 0x00;
+    uint8_t bg_next_tile_attrib = 0x00;
+    uint8_t bg_next_tile_lsb = 0x00;
+    uint8_t bg_next_tile_msb = 0x00;
+    
 
-    uint16_t pattern_shift_reg[2];
-    uint8_t palette_shift_reg[2];
-    uint8_t title_data;
-
-    struct Sprite {
-        uint8_t y;
-        uint8_t tile_index;
-        uint8_t attribute;
-        uint8_t x;
-    };
-    std::array<Sprite, 8> sprite_buffer;
-    std::array<uint32_t, 256 * 240> screen;
-    bool frame_completed;
-
-    void increment_vram_addr();
-    void update_shifters();
+    uint16_t vram_addr = 0x0000;
+    uint8_t ppu_data_buffer = 0x00;
+    
+    uint32_t screen[256 * 240];
+    
+    
+    uint8_t ppu_read(uint16_t address, bool read_only = false);
+    void ppu_write(uint16_t address, uint8_t data);
+    void increment_scroll_x();
+    void increment_scroll_y();
+    void transfer_address_x();
+    void transfer_address_y();
     void load_background_shifters();
-    void evaluate_sprites();
+    void update_shifters();
+    
+    Bus* bus = nullptr;
+
 };
 
 #endif //PPU_H

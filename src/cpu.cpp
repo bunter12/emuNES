@@ -96,11 +96,13 @@ void CPU::Setflag(uint8_t flag, bool value) {
 void CPU::log_status() {
     std::cout << "PC: " << std::hex << PC << " A: " << std::hex << +A
         << " X: " << std::hex << +X << " Y: " << std::hex << +Y
-        << " SP: " << std::hex << +SP << " Status: " << std::hex << +status << std::endl;
+        << " SP: " << std::hex << +SP << " Status: " << std::hex << +status <<std::endl;
 }
 
 void CPU::reset() {
-    PC = (read(0xFFFD) << 8) | read(0xFFFC);
+//    PC = (read(0xFFFD) << 8) | read(0xFFFC);
+    PC=0xc000;
+    
     SP = 0xFD;
     A = X = Y = 0;
     running = true;
@@ -113,6 +115,15 @@ void CPU::turn_off() {
 
 void CPU::turn_on() {
     running = true;
+}
+
+void CPU::nmi() {
+    stack_push16(PC);
+    stack_push(status);
+    
+    Setflag(FLAG_I, true);
+    
+    PC = read16(0xFFFA);
 }
 
 int CPU::clock() {

@@ -23,6 +23,7 @@ public:
     void turn_on();
     int clock();
     void connect_bus(Bus* b) { bus = b; }
+    void nmi();
     
 private:
     bool Getflag(uint8_t flag);
