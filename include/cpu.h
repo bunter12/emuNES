@@ -21,11 +21,14 @@ public:
     void reset();
     void turn_off();
     void turn_on();
-    int clock();
+    void clock();
     void connect_bus(Bus* b) { bus = b; }
     void nmi();
     
 private:
+    
+    uint8_t cycles_left = 0;
+    
     bool Getflag(uint8_t flag);
     void Setflag(uint8_t flag, bool value);
     void ADC(uint8_t operand);

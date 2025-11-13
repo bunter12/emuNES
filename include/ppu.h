@@ -22,21 +22,23 @@ public:
     uint32_t* get_screen();
     bool frame_complete = false;
     
-    uint8_t vram[2048];
-    uint8_t palette_ram[32];
-    uint8_t oam[256];
-    
     int scanline = 0;
     int cycle = 0;
     
     void log_status();
+    void reset();
     
 private:
+    
+    uint8_t oam[256];
+    uint8_t oam_addr = 0x00;
+    
+    uint8_t vram[2048];
+    uint8_t palette_ram[32];
     
     uint8_t reg_ctrl = 0x00;
     uint8_t reg_mask = 0x00;
     uint8_t reg_status = 0x00;
-    uint8_t oam_addr = 0x00;
     
     uint16_t vram_addr_v = 0x0000;
     uint16_t vram_addr_t = 0x0000;
@@ -69,6 +71,17 @@ private:
     void transfer_address_y();
     void load_background_shifters();
     void update_shifters();
+    
+    struct OAM_Entry {
+        uint8_t y;
+        uint8_t tile_id;
+        uint8_t attribute;
+        uint8_t x;
+    } secondary_oam[8];
+    uint8_t sprite_count = 0;
+    
+    uint8_t sprite_shifter_pattern_lo[8];
+    uint8_t sprite_shifter_pattern_hi[8];
     
     Bus* bus = nullptr;
 

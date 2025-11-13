@@ -1,6 +1,7 @@
 #include "cartridge.h"
 #include <fstream>
 #include <iostream>
+#include <cstdio>
 
 Cartridge::Cartridge(const std::string& filename) {
     
@@ -46,6 +47,7 @@ Cartridge::Cartridge(const std::string& filename) {
 
     prg_banks = header.prg_rom_chunks;
     prg_memory.resize(prg_banks * 16384);
+    std::cout<<"Size prg memory: "<<prg_memory.size();
     file.read((char*)prg_memory.data(), prg_memory.size());
 
     chr_banks = header.chr_rom_chunks;
@@ -66,8 +68,16 @@ Cartridge::Cartridge(const std::string& filename) {
 
 bool Cartridge::cpu_read(uint16_t address, uint8_t& data) {
     if (address >= 0x8000 && address <= 0xFFFF) {
-        data = prg_memory[address & 0x3FFF];
-        return true;
+        uint16_t mapped_addr = address - 0x8000;
+        
+        if (prg_banks == 1) {
+            mapped_addr &= 0x3FFF;
+        }
+
+        if (mapped_addr < prg_memory.size()) {
+            data = prg_memory[mapped_addr];
+            return true;
+        }
     }
     return false;
 }

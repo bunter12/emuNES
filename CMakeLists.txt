@@ -24,3 +24,9 @@ target_include_directories(core_logic PUBLIC
 add_executable(${PROJECT_NAME} src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE core_logic)
+
+find_package(SDL2 REQUIRED)
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${SDL2_INCLUDE_DIRS})
+
+target_link_libraries(${PROJECT_NAME} PRIVATE ${SDL2_LIBRARIES})

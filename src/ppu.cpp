@@ -22,7 +22,7 @@ uint8_t PPU::cpu_read(uint16_t address) {
     uint8_t data = 0x00;
     switch (address) {
         case 0x0002: // PPUSTATUS
-            data = (reg_status & 0xE0) | (ppu_data_buffer & 0x1F);
+            data = reg_status;
             reg_status &= ~0x80;
             address_latch_w = false;
             break;
@@ -41,6 +41,22 @@ uint8_t PPU::cpu_read(uint16_t address) {
     return data;
 }
 
+void PPU::reset() {
+    reg_ctrl = 0;
+    reg_mask = 0;
+    reg_status = 0;
+    oam_addr = 0;
+    
+    address_latch_w = false;
+    vram_addr_v = 0;
+    vram_addr_t = 0;
+    fine_x_scroll = 0;
+    
+    scanline = 0;
+    cycle = 0;
+    
+}
+
 void PPU::cpu_write(uint16_t address, uint8_t data) {
     switch (address) {
         case 0x0000: // PPUCTRL
@@ -48,6 +64,7 @@ void PPU::cpu_write(uint16_t address, uint8_t data) {
             vram_addr_t = (vram_addr_t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
             break;
         case 0x0001: // PPUMASK
+            printf("[PPU WRITE] CPU wrote $%02X to PPUMASK\n", data);
             reg_mask = data;
             break;
         case 0x0003: // OAMADDR
@@ -129,6 +146,7 @@ uint8_t PPU::ppu_read(uint16_t address, bool read_only) {
         
         data = palette_ram[address];
     }
+    
     
     return data;
 }
@@ -248,7 +266,15 @@ void PPU::clock() {
                 bg_next_tile_lsb = ppu_read(((uint16_t)(reg_ctrl & 0x10) << 8) + ((uint16_t)bg_next_tile_id << 4) + ((vram_addr_v >> 12) & 0x07));
                 break;
             case 6:
-                bg_next_tile_msb = ppu_read(((uint16_t)(reg_ctrl & 0x10) << 8) + ((uint16_t)bg_next_tile_id << 4) + ((vram_addr_v >> 12) & 0x07) + 8);
+                {
+                    bg_next_tile_msb = ppu_read(((uint16_t)(reg_ctrl & 0x10) << 8) + ((uint16_t)bg_next_tile_id << 4) + ((vram_addr_v >> 12) & 0x07) + 8);
+                    static int load_count = 0;
+                    if (load_count < 8) {
+                        printf("[PPU Clock] Loaded Tile ID: $%02X, LSB: $%02X, MSB: $%02X\n",
+                               bg_next_tile_id, bg_next_tile_lsb, bg_next_tile_msb);
+                        load_count++;
+                    }
+                }
                 break;
             case 7:
                 if (reg_mask & 0x18) increment_scroll_x();
@@ -303,6 +329,8 @@ void PPU::clock() {
     if (cycle > 340) {
         cycle = 0;
         scanline++;
+        printf("[PPU Tick] Scanline: %d, V: %04X, T: %04X, Mask: %02X\n",
+               scanline, vram_addr_v, vram_addr_t, reg_mask);
         if (scanline > 261) {
             scanline = -1;
             frame_complete = true;

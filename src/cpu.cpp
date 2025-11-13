@@ -100,13 +100,17 @@ void CPU::log_status() {
 }
 
 void CPU::reset() {
-//    PC = (read(0xFFFD) << 8) | read(0xFFFC);
-    PC=0xc000;
-    
+    uint16_t low_byte = read(0xFFFC);
+    uint16_t high_byte = read(0xFFFD);
+    PC = (high_byte << 8) | low_byte;
+    std::cout<<"First PC: "<< PC;
+    A = 0;
+    X = 0;
+    Y = 0;
     SP = 0xFD;
-    A = X = Y = 0;
-    running = true;
-    status = 0x24;
+    status = 0x00 | FLAG_Ig;
+
+    cycles_left = 8;
 }
 
 void CPU::turn_off() {
@@ -124,279 +128,286 @@ void CPU::nmi() {
     Setflag(FLAG_I, true);
     
     PC = read16(0xFFFA);
+    cycles_left+=8;
 }
 
-int CPU::clock() {
+void CPU::clock() {
+    if (cycles_left > 0) {
+        cycles_left--;
+        return;
+    }
+    printf("CPU Clock - PC: %04X\n", PC);
     uint8_t opcode = fetch();
     int instruction_cycles = cycles[opcode];
+    int additional_cycles = 0;
     int8_t offset=0;
     switch (opcode) {
-    case 0x69:
-        ADC(fetch());
-        break;
-    case 0x65:
-        ADC(read(fetch()));
-        break;
-    case 0x75:
-        ADC(read((fetch() + X)& 0xFF));
-        break;
-    case 0x6D:
-        ADC(read(fetch16()));
-        break;
-    case 0x7D:
-        ADC(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0x79:
-        ADC(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0x61:
+        case 0x69:
+            ADC(fetch());
+            break;
+        case 0x65:
+            ADC(read(fetch()));
+            break;
+        case 0x75:
+            ADC(read((fetch() + X)& 0xFF));
+            break;
+        case 0x6D:
+            ADC(read(fetch16()));
+            break;
+        case 0x7D:
+            ADC(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0x79:
+            ADC(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0x61:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        ADC(read(effective_addr));
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            ADC(read(effective_addr));
         }
-        break;
-    case 0x71:
-        ADC(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0x29:
-        AND(fetch());
-        break;
-    case 0x25:
-        AND(read(fetch()));
-        break;
-    case 0x35:
-        AND(read((fetch() + X)& 0xFF));
-        break;
-    case 0x2D:
-        AND(read(fetch16()));
-        break;
-    case 0x3D:
-        AND(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0x39:
-        AND(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0x21:
+            break;
+        case 0x71:
+            ADC(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0x29:
+            AND(fetch());
+            break;
+        case 0x25:
+            AND(read(fetch()));
+            break;
+        case 0x35:
+            AND(read((fetch() + X)& 0xFF));
+            break;
+        case 0x2D:
+            AND(read(fetch16()));
+            break;
+        case 0x3D:
+            AND(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0x39:
+            AND(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0x21:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        AND(read(effective_addr));
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            AND(read(effective_addr));
         }
-        break;
-    case 0x31:
-        AND(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0x0A:
-        ASL_accumulator();
-        break;
-    case 0x06:
-        ASL(fetch());
-        break;
-    case 0x16:
-        ASL((fetch() + X)& 0xFF);
-        break;
-    case 0x0E:
-        ASL(fetch16());
-        break;
-    case 0x1E:
-        ASL(fetch16() + X);
-        break;
-    case 0x90:
-        offset = fetch();
-        if (!Getflag(FLAG_C)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0x31:
+            AND(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0x0A:
+            ASL_accumulator();
+            break;
+        case 0x06:
+            ASL(fetch());
+            break;
+        case 0x16:
+            ASL((fetch() + X)& 0xFF);
+            break;
+        case 0x0E:
+            ASL(fetch16());
+            break;
+        case 0x1E:
+            ASL(fetch16() + X);
+            break;
+        case 0x90:
+            offset = fetch();
+            if (!Getflag(FLAG_C)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0xB0:
-        offset = fetch();
-        if (Getflag(FLAG_C)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0xB0:
+            offset = fetch();
+            if (Getflag(FLAG_C)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0xF0:
-        offset = fetch();
-        if (Getflag(FLAG_Z)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0xF0:
+            offset = fetch();
+            if (Getflag(FLAG_Z)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0x24:
-        BIT(fetch());
-        break;
-    case 0x2C:
-        BIT(fetch16());
-        break;
-    case 0x30:
-        offset = fetch();
-        if (Getflag(FLAG_N)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0x24:
+            BIT(fetch());
+            break;
+        case 0x2C:
+            BIT(fetch16());
+            break;
+        case 0x30:
+            offset = fetch();
+            if (Getflag(FLAG_N)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0xD0:
-        offset = fetch();
-        if (!Getflag(FLAG_Z)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0xD0:
+            offset = fetch();
+            if (!Getflag(FLAG_Z)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0x10:
-        offset = fetch();
-        if (!Getflag(FLAG_N)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0x10:
+            offset = fetch();
+            if (!Getflag(FLAG_N)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0x00:
-        BRK();
-        break;
-    case 0x50:
-        offset = fetch();
-        if (!Getflag(FLAG_V)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0x00:
+            BRK();
+            break;
+        case 0x50:
+            offset = fetch();
+            if (!Getflag(FLAG_V)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0x70:
-        offset = fetch();
-        if (Getflag(FLAG_V)) {
-            instruction_cycles++;
-            uint16_t target_addr = PC + offset;
-            if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
-                instruction_cycles++;
+            break;
+        case 0x70:
+            offset = fetch();
+            if (Getflag(FLAG_V)) {
+                additional_cycles=1;
+                uint16_t target_addr = PC + offset;
+                if ((PC & 0xFF00) != (target_addr & 0xFF00)) {
+                    additional_cycles++;
+                }
+                PC = target_addr;
             }
-            PC = target_addr;
-        }
-        break;
-    case 0x18:
-        CLC();
-        break;
-    case 0xD8:
-        CLD();
-        break;
-    case 0x58:
-        CLI();
-        break;
-    case 0xB8:
-        CLV();
-        break;
-    case 0xC9:
-        CMP(fetch());
-        break;
-    case 0xC5:
-        CMP(read(fetch()));
-        break;
-    case 0xD5:
-        CMP(read((fetch() + X) & 0xFF));
-        break;
-    case 0xCD:
-        CMP(read(fetch16()));
-        break;
-    case 0xDD:
-        CMP(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0xD9:
-        CMP(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0xC1:
+            break;
+        case 0x18:
+            CLC();
+            break;
+        case 0xD8:
+            CLD();
+            break;
+        case 0x58:
+            CLI();
+            break;
+        case 0xB8:
+            CLV();
+            break;
+        case 0xC9:
+            CMP(fetch());
+            break;
+        case 0xC5:
+            CMP(read(fetch()));
+            break;
+        case 0xD5:
+            CMP(read((fetch() + X) & 0xFF));
+            break;
+        case 0xCD:
+            CMP(read(fetch16()));
+            break;
+        case 0xDD:
+            CMP(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0xD9:
+            CMP(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0xC1:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        CMP(read(effective_addr));
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            CMP(read(effective_addr));
         }
-        break;
-    case 0xD1:
-        CMP(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0xE0:
-        CPX(fetch());
-        break;
-    case 0xE4:
-        CPX(read(fetch()));
-        break;
-    case 0xEC:
-        CPX(fetch16());
-        break;
-    case 0xC0:
-        CPY(fetch());
-        break;
-    case 0xC4:
-        CPY(read(fetch()));
-        break;
-    case 0xCC:
-        CPY(fetch16());
-        break;
-    case 0xC6:
-        DEC(fetch());
-        break;
-    case 0xD6:
-        DEC((fetch() + X)& 0xFF);
-        break;
-    case 0xCE:
-        DEC(fetch16());
-        break;
-    case 0xDE:
-        DEC(fetch16() + X);
-        break;
-    case 0xCA:
-        DEX();
-        break;
-    case 0x88:
-        DEY();
-        break;
-    case 0x49:
-        EOR(fetch());
-        break;
-    case 0x45:
-        EOR(read(fetch()));
-        break;
-    case 0x55:
-        EOR(read((fetch() + X) & 0xFF ));
-        break;
-    case 0x4D:
-        EOR(read(fetch16()));
-        break;
-    case 0x5D:
-        EOR(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0x59:
-        EOR(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0x41:
+            break;
+        case 0xD1:
+            CMP(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0xE0:
+            CPX(fetch());
+            break;
+        case 0xE4:
+            CPX(read(fetch()));
+            break;
+        case 0xEC:
+            CPX(fetch16());
+            break;
+        case 0xC0:
+            CPY(fetch());
+            break;
+        case 0xC4:
+            CPY(read(fetch()));
+            break;
+        case 0xCC:
+            CPY(fetch16());
+            break;
+        case 0xC6:
+            DEC(fetch());
+            break;
+        case 0xD6:
+            DEC((fetch() + X)& 0xFF);
+            break;
+        case 0xCE:
+            DEC(fetch16());
+            break;
+        case 0xDE:
+            DEC(fetch16() + X);
+            break;
+        case 0xCA:
+            DEX();
+            break;
+        case 0x88:
+            DEY();
+            break;
+        case 0x49:
+            EOR(fetch());
+            break;
+        case 0x45:
+            EOR(read(fetch()));
+            break;
+        case 0x55:
+            EOR(read((fetch() + X) & 0xFF ));
+            break;
+        case 0x4D:
+            EOR(read(fetch16()));
+            break;
+        case 0x5D:
+            EOR(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0x59:
+            EOR(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0x41:
         {
             uint8_t base_addr = fetch();
             uint16_t lookup_addr = (base_addr + X) & 0x00FF;
@@ -404,291 +415,292 @@ int CPU::clock() {
             EOR(read(effective_addr));
             break;
         }
-    case 0x51:
-        EOR(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0xE6:
-        INC(fetch());
-        break;
-    case 0xF6:
-        INC((fetch() + X)& 0xFF);
-        break;
-    case 0xEE:
-        INC(fetch16());
-        break;
-    case 0xFE:
-        INC(fetch16() + X);
-        break;
-    case 0xE8:
-        INX();
-        break;
-    case 0xC8:
-        INY();
-        break;
-    case 0x4C:
-        JMP(fetch16());
-        break;
-    case 0x6C:
-        JMP_indirect(fetch16());
-        break;
-    case 0x20:
-        JSR(fetch16());
-        break;
-    case 0xA9:
-        LDA(fetch() & 0xFF);
-        break;
-    case 0xA5:
-        LDA(read(fetch() & 0xFF));
-        break;
-    case 0xB5:
-        LDA(read((fetch() + X) & 0xFF));
-        break;
-    case 0xAD:
-        LDA(read(fetch16()));
-        break;
-    case 0xBD:
-        LDA(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0xB9:
-        LDA(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0xA1:{
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        LDA(read(effective_addr));}
-        break;
-    case 0xB1:
-        LDA(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0xA2:
-        LDX(fetch());
-        break;
-    case 0xA6:
-        LDX(read(fetch()));
-        break;
-    case 0xB6:
-        LDX(read((fetch() + Y) & 0xFF ));
-        break;
-    case 0xAE:
-        LDX(read(fetch16()));
-        break;
-    case 0xBE:
-        LDX(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0xA0:
-        LDY(fetch());
-        break;
-    case 0xA4:
-        LDY(read(fetch()));
-        break;
-    case 0xB4:
-        LDY(read((fetch() + X) & 0xFF));
-        break;
-    case 0xAC:
-        LDY(read(fetch16()));
-        break;
-    case 0xBC:
-        LDY(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0x4A:
-        LSR_accumulator();
-        break;
-    case 0x46:
-        LSR(fetch());
-        break;
-    case 0x56:
-        LSR((fetch() + X) & 0xFF);
-        break;
-    case 0x4E:
-        LSR(fetch16());
-        break;
-    case 0x5E:
-        LSR(fetch16() + X);
-        break;
-    case 0x09:
-        ORA(fetch());
-        break;
-    case 0x05:
-        ORA(read(fetch()));
-        break;
-    case 0x15:
-        ORA(read((fetch() + X) & 0xFF));
-        break;
-    case 0x0D:
-        ORA(read(fetch16()));
-        break;
-    case 0x1D:
-        ORA(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0x19:
-        ORA(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0x01:
+        case 0x51:
+            EOR(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0xE6:
+            INC(fetch());
+            break;
+        case 0xF6:
+            INC((fetch() + X)& 0xFF);
+            break;
+        case 0xEE:
+            INC(fetch16());
+            break;
+        case 0xFE:
+            INC(fetch16() + X);
+            break;
+        case 0xE8:
+            INX();
+            break;
+        case 0xC8:
+            INY();
+            break;
+        case 0x4C:
+            JMP(fetch16());
+            break;
+        case 0x6C:
+            JMP_indirect(fetch16());
+            break;
+        case 0x20:
+            JSR(fetch16());
+            break;
+        case 0xA9:
+            LDA(fetch() & 0xFF);
+            break;
+        case 0xA5:
+            LDA(read(fetch() & 0xFF));
+            break;
+        case 0xB5:
+            LDA(read((fetch() + X) & 0xFF));
+            break;
+        case 0xAD:
+            LDA(read(fetch16()));
+            break;
+        case 0xBD:
+            LDA(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0xB9:
+            LDA(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0xA1:{
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            LDA(read(effective_addr));}
+            break;
+        case 0xB1:
+            LDA(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0xA2:
+            LDX(fetch());
+            break;
+        case 0xA6:
+            LDX(read(fetch()));
+            break;
+        case 0xB6:
+            LDX(read((fetch() + Y) & 0xFF ));
+            break;
+        case 0xAE:
+            LDX(read(fetch16()));
+            break;
+        case 0xBE:
+            LDX(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0xA0:
+            LDY(fetch());
+            break;
+        case 0xA4:
+            LDY(read(fetch()));
+            break;
+        case 0xB4:
+            LDY(read((fetch() + X) & 0xFF));
+            break;
+        case 0xAC:
+            LDY(read(fetch16()));
+            break;
+        case 0xBC:
+            LDY(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0x4A:
+            LSR_accumulator();
+            break;
+        case 0x46:
+            LSR(fetch());
+            break;
+        case 0x56:
+            LSR((fetch() + X) & 0xFF);
+            break;
+        case 0x4E:
+            LSR(fetch16());
+            break;
+        case 0x5E:
+            LSR(fetch16() + X);
+            break;
+        case 0x09:
+            ORA(fetch());
+            break;
+        case 0x05:
+            ORA(read(fetch()));
+            break;
+        case 0x15:
+            ORA(read((fetch() + X) & 0xFF));
+            break;
+        case 0x0D:
+            ORA(read(fetch16()));
+            break;
+        case 0x1D:
+            ORA(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0x19:
+            ORA(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0x01:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        ORA(read(effective_addr));
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            ORA(read(effective_addr));
         }
-        break;
-    case 0x11:
-        ORA(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0x48:
-        PHA();
-        break;
-    case 0x08:
-        PHP();
-        break;
-    case 0x68:
-        PLA();
-        break;
-    case 0x28:
-        PLP();
-        break;
-    case 0x2A:
-        ROL_accumulator();
-        break;
-    case 0x26:
-        ROL(fetch());
-        break;
-    case 0x36:
-        ROL((fetch() + X) & 0xFF );
-        break;
-    case 0x2E:
-        ROL(fetch16());
-        break;
-    case 0x3E:
-        ROL(fetch16() + X);
-        break;
-    case 0x6A:
-        ROR_accumulator();
-        break;
-    case 0x66:
-        ROR(fetch());
-        break;
-    case 0x76:
-        ROR((fetch() + X) & 0xFF);
-        break;
-    case 0x6E:
-        ROR(fetch16());
-        break;
-    case 0x7E:
-        ROR(fetch16() + X);
-        break;
-    case 0x40:
-        RTI();
-        break;
-    case 0x60:
-        RTS();
-        break;
-    case 0xE9:
-        SBC(fetch());
-        break;
-    case 0xE5: SBC(read(fetch()));
-        break;
-    case 0xF5:
-        SBC(read((fetch() + X) & 0xFF ));
-        break;
-    case 0xED:
-        SBC(read(fetch16()));
-        break;
-    case 0xFD:
-        SBC(read(addr_abs_x(instruction_cycles)));
-        break;
-    case 0xF9:
-        SBC(read(addr_abs_y(instruction_cycles)));
-        break;
-    case 0xE1:
+            break;
+        case 0x11:
+            ORA(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0x48:
+            PHA();
+            break;
+        case 0x08:
+            PHP();
+            break;
+        case 0x68:
+            PLA();
+            break;
+        case 0x28:
+            PLP();
+            break;
+        case 0x2A:
+            ROL_accumulator();
+            break;
+        case 0x26:
+            ROL(fetch());
+            break;
+        case 0x36:
+            ROL((fetch() + X) & 0xFF );
+            break;
+        case 0x2E:
+            ROL(fetch16());
+            break;
+        case 0x3E:
+            ROL(fetch16() + X);
+            break;
+        case 0x6A:
+            ROR_accumulator();
+            break;
+        case 0x66:
+            ROR(fetch());
+            break;
+        case 0x76:
+            ROR((fetch() + X) & 0xFF);
+            break;
+        case 0x6E:
+            ROR(fetch16());
+            break;
+        case 0x7E:
+            ROR(fetch16() + X);
+            break;
+        case 0x40:
+            RTI();
+            break;
+        case 0x60:
+            RTS();
+            break;
+        case 0xE9:
+            SBC(fetch());
+            break;
+        case 0xE5: SBC(read(fetch()));
+            break;
+        case 0xF5:
+            SBC(read((fetch() + X) & 0xFF ));
+            break;
+        case 0xED:
+            SBC(read(fetch16()));
+            break;
+        case 0xFD:
+            SBC(read(addr_abs_x(additional_cycles)));
+            break;
+        case 0xF9:
+            SBC(read(addr_abs_y(additional_cycles)));
+            break;
+        case 0xE1:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        SBC(read(effective_addr));
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            SBC(read(effective_addr));
         }
-        break;
-    case 0xF1:
-        SBC(read(addr_ind_y(instruction_cycles)));
-        break;
-    case 0x38:
-        SEC();
-        break;
-    case 0xF8:
-        SED();
-        break;
-    case 0x78:
-        SEI();
-        break;
-    case 0x85:
-        STA(fetch()); break;
-    case 0x95:
-        STA((fetch() + X) & 0xFF);
-        break;
-    case 0x8D:
-        STA(fetch16());
-        break;
-    case 0x9D:
-        STA(fetch16() + X);
-        break;
-    case 0x99:
-        STA(fetch16() + Y);
-        break;
-    case 0x81:
+            break;
+        case 0xF1:
+            SBC(read(addr_ind_y(additional_cycles)));
+            break;
+        case 0x38:
+            SEC();
+            break;
+        case 0xF8:
+            SED();
+            break;
+        case 0x78:
+            SEI();
+            break;
+        case 0x85:
+            STA(fetch()); break;
+        case 0x95:
+            STA((fetch() + X) & 0xFF);
+            break;
+        case 0x8D:
+            STA(fetch16());
+            break;
+        case 0x9D:
+            STA(fetch16() + X);
+            break;
+        case 0x99:
+            STA(fetch16() + Y);
+            break;
+        case 0x81:
         {
-        uint8_t base_addr = fetch();
-        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
-        uint16_t effective_addr = read16_zeropage(lookup_addr);
-        STA(effective_addr);
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            STA(effective_addr);
         }
-        break;
-    case 0x91:
-    {
-        uint8_t zp_addr = fetch();
-        uint16_t base_addr = read16_zeropage(zp_addr);
-        uint16_t final_addr = base_addr + Y;
-        write(final_addr, A);
-        break;
-    }
-    case 0x86:
-        STX(fetch());
-        break;
-    case 0x96:
-        STX((fetch() + Y) & 0xFF);
-        break;
-    case 0x8E:
-        STX(fetch16());
-        break;
-    case 0x84:
-        STY(fetch());
-        break;
-    case 0x94:
-        STY((fetch() + X) & 0xFF);
-        break;
-    case 0x8C:
-        STY(fetch16());
-        break;
-    case 0xAA:
-        TAX();
-        break;
-    case 0xA8:
-        TAY();
-        break;
-    case 0xBA:
-        TSX();
-        break;
-    case 0x8A:
-        TXA();
-        break;
-    case 0x9A:
-        TXS();
-        break;
-    case 0x98:
-        TYA();
-        break;
+            break;
+        case 0x91:
+        {
+            uint8_t zp_addr = fetch();
+            uint16_t base_addr = read16_zeropage(zp_addr);
+            uint16_t final_addr = base_addr + Y;
+            write(final_addr, A);
+            break;
+        }
+        case 0x86:
+            STX(fetch());
+            break;
+        case 0x96:
+            STX((fetch() + Y) & 0xFF);
+            break;
+        case 0x8E:
+            STX(fetch16());
+            break;
+        case 0x84:
+            STY(fetch());
+            break;
+        case 0x94:
+            STY((fetch() + X) & 0xFF);
+            break;
+        case 0x8C:
+            STY(fetch16());
+            break;
+        case 0xAA:
+            TAX();
+            break;
+        case 0xA8:
+            TAY();
+            break;
+        case 0xBA:
+            TSX();
+            break;
+        case 0x8A:
+            TXA();
+            break;
+        case 0x9A:
+            TXS();
+            break;
+        case 0x98:
+            TYA();
+            break;
     }
     
-    return instruction_cycles;
+    cycles_left = instruction_cycles + additional_cycles;
+    cycles_left--;
 }
 
 void CPU::ADC(uint8_t operand) {
