@@ -106,7 +106,7 @@ void CPU::reset() {
     SP = 0xFD;
     A = X = Y = 0;
     running = true;
-    status = 0x00;
+    status = 0x24;
 }
 
 void CPU::turn_off() {
@@ -138,7 +138,7 @@ int CPU::clock() {
         ADC(read(fetch()));
         break;
     case 0x75:
-        ADC(read(fetch() + X));
+        ADC(read((fetch() + X)& 0xFF));
         break;
     case 0x6D:
         ADC(read(fetch16()));
@@ -150,7 +150,12 @@ int CPU::clock() {
         ADC(read(addr_abs_y(instruction_cycles)));
         break;
     case 0x61:
-        ADC(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        ADC(read(effective_addr));
+        }
         break;
     case 0x71:
         ADC(read(addr_ind_y(instruction_cycles)));
@@ -162,7 +167,7 @@ int CPU::clock() {
         AND(read(fetch()));
         break;
     case 0x35:
-        AND(read(fetch() + X));
+        AND(read((fetch() + X)& 0xFF));
         break;
     case 0x2D:
         AND(read(fetch16()));
@@ -174,7 +179,12 @@ int CPU::clock() {
         AND(read(addr_abs_y(instruction_cycles)));
         break;
     case 0x21:
-        AND(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        AND(read(effective_addr));
+        }
         break;
     case 0x31:
         AND(read(addr_ind_y(instruction_cycles)));
@@ -186,7 +196,7 @@ int CPU::clock() {
         ASL(fetch());
         break;
     case 0x16:
-        ASL(fetch() + X);
+        ASL((fetch() + X)& 0xFF);
         break;
     case 0x0E:
         ASL(fetch16());
@@ -310,7 +320,7 @@ int CPU::clock() {
         CMP(read(fetch()));
         break;
     case 0xD5:
-        CMP(read(fetch() + X));
+        CMP(read((fetch() + X) & 0xFF));
         break;
     case 0xCD:
         CMP(read(fetch16()));
@@ -322,7 +332,12 @@ int CPU::clock() {
         CMP(read(addr_abs_y(instruction_cycles)));
         break;
     case 0xC1:
-        CMP(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        CMP(read(effective_addr));
+        }
         break;
     case 0xD1:
         CMP(read(addr_ind_y(instruction_cycles)));
@@ -349,7 +364,7 @@ int CPU::clock() {
         DEC(fetch());
         break;
     case 0xD6:
-        DEC(fetch() + X);
+        DEC((fetch() + X)& 0xFF);
         break;
     case 0xCE:
         DEC(fetch16());
@@ -370,7 +385,7 @@ int CPU::clock() {
         EOR(read(fetch()));
         break;
     case 0x55:
-        EOR(read(fetch() + X));
+        EOR(read((fetch() + X) & 0xFF ));
         break;
     case 0x4D:
         EOR(read(fetch16()));
@@ -382,8 +397,13 @@ int CPU::clock() {
         EOR(read(addr_abs_y(instruction_cycles)));
         break;
     case 0x41:
-        EOR(read((fetch() + X) & 0xFF));
-        break;
+        {
+            uint8_t base_addr = fetch();
+            uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+            uint16_t effective_addr = read16_zeropage(lookup_addr);
+            EOR(read(effective_addr));
+            break;
+        }
     case 0x51:
         EOR(read(addr_ind_y(instruction_cycles)));
         break;
@@ -391,7 +411,7 @@ int CPU::clock() {
         INC(fetch());
         break;
     case 0xF6:
-        INC(fetch() + X);
+        INC((fetch() + X)& 0xFF);
         break;
     case 0xEE:
         INC(fetch16());
@@ -415,13 +435,13 @@ int CPU::clock() {
         JSR(fetch16());
         break;
     case 0xA9:
-        LDA(fetch());
+        LDA(fetch() & 0xFF);
         break;
     case 0xA5:
-        LDA(read(fetch()));
+        LDA(read(fetch() & 0xFF));
         break;
     case 0xB5:
-        LDA(read(fetch() + X));
+        LDA(read((fetch() + X) & 0xFF));
         break;
     case 0xAD:
         LDA(read(fetch16()));
@@ -432,8 +452,11 @@ int CPU::clock() {
     case 0xB9:
         LDA(read(addr_abs_y(instruction_cycles)));
         break;
-    case 0xA1:
-        LDA(read((fetch() + X) & 0xFF));
+    case 0xA1:{
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        LDA(read(effective_addr));}
         break;
     case 0xB1:
         LDA(read(addr_ind_y(instruction_cycles)));
@@ -445,10 +468,10 @@ int CPU::clock() {
         LDX(read(fetch()));
         break;
     case 0xB6:
-        LDX(read(fetch() + Y));
+        LDX(read((fetch() + Y) & 0xFF ));
         break;
     case 0xAE:
-        LDX(fetch16());
+        LDX(read(fetch16()));
         break;
     case 0xBE:
         LDX(read(addr_abs_y(instruction_cycles)));
@@ -460,10 +483,10 @@ int CPU::clock() {
         LDY(read(fetch()));
         break;
     case 0xB4:
-        LDY(read(fetch() + X));
+        LDY(read((fetch() + X) & 0xFF));
         break;
     case 0xAC:
-        LDY(fetch16());
+        LDY(read(fetch16()));
         break;
     case 0xBC:
         LDY(read(addr_abs_x(instruction_cycles)));
@@ -475,7 +498,7 @@ int CPU::clock() {
         LSR(fetch());
         break;
     case 0x56:
-        LSR(fetch() + X);
+        LSR((fetch() + X) & 0xFF);
         break;
     case 0x4E:
         LSR(fetch16());
@@ -490,7 +513,7 @@ int CPU::clock() {
         ORA(read(fetch()));
         break;
     case 0x15:
-        ORA(read(fetch() + X));
+        ORA(read((fetch() + X) & 0xFF));
         break;
     case 0x0D:
         ORA(read(fetch16()));
@@ -502,7 +525,12 @@ int CPU::clock() {
         ORA(read(addr_abs_y(instruction_cycles)));
         break;
     case 0x01:
-        ORA(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        ORA(read(effective_addr));
+        }
         break;
     case 0x11:
         ORA(read(addr_ind_y(instruction_cycles)));
@@ -526,7 +554,7 @@ int CPU::clock() {
         ROL(fetch());
         break;
     case 0x36:
-        ROL(fetch() + X);
+        ROL((fetch() + X) & 0xFF );
         break;
     case 0x2E:
         ROL(fetch16());
@@ -541,7 +569,7 @@ int CPU::clock() {
         ROR(fetch());
         break;
     case 0x76:
-        ROR(fetch() + X);
+        ROR((fetch() + X) & 0xFF);
         break;
     case 0x6E:
         ROR(fetch16());
@@ -561,7 +589,7 @@ int CPU::clock() {
     case 0xE5: SBC(read(fetch()));
         break;
     case 0xF5:
-        SBC(read(fetch() + X));
+        SBC(read((fetch() + X) & 0xFF ));
         break;
     case 0xED:
         SBC(read(fetch16()));
@@ -573,7 +601,12 @@ int CPU::clock() {
         SBC(read(addr_abs_y(instruction_cycles)));
         break;
     case 0xE1:
-        SBC(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        SBC(read(effective_addr));
+        }
         break;
     case 0xF1:
         SBC(read(addr_ind_y(instruction_cycles)));
@@ -590,7 +623,7 @@ int CPU::clock() {
     case 0x85:
         STA(fetch()); break;
     case 0x95:
-        STA(fetch() + X);
+        STA((fetch() + X) & 0xFF);
         break;
     case 0x8D:
         STA(fetch16());
@@ -602,16 +635,26 @@ int CPU::clock() {
         STA(fetch16() + Y);
         break;
     case 0x81:
-        STA(read((fetch() + X) & 0xFF));
+        {
+        uint8_t base_addr = fetch();
+        uint16_t lookup_addr = (base_addr + X) & 0x00FF;
+        uint16_t effective_addr = read16_zeropage(lookup_addr);
+        STA(effective_addr);
+        }
         break;
     case 0x91:
-        STA(read((fetch() & 0xFF) + Y));
+    {
+        uint8_t zp_addr = fetch();
+        uint16_t base_addr = read16_zeropage(zp_addr);
+        uint16_t final_addr = base_addr + Y;
+        write(final_addr, A);
         break;
+    }
     case 0x86:
         STX(fetch());
         break;
     case 0x96:
-        STX(fetch() + Y);
+        STX((fetch() + Y) & 0xFF);
         break;
     case 0x8E:
         STX(fetch16());
@@ -620,7 +663,7 @@ int CPU::clock() {
         STY(fetch());
         break;
     case 0x94:
-        STY(fetch() + X);
+        STY((fetch() + X) & 0xFF);
         break;
     case 0x8C:
         STY(fetch16());
@@ -718,8 +761,8 @@ void CPU::BPL(uint8_t offset) {
 
 void CPU::BRK() {
     Setflag(FLAG_I, true);
-    stack_push16(PC + 1);
-    stack_push(status | 0x30);
+    stack_push16(++PC);
+    stack_push(status | FLAG_B | FLAG_Ig);
     PC = read16(0xFFFE);
 }
 
@@ -750,7 +793,7 @@ void CPU::CLV() {
 }
 
 void CPU::CMP(uint8_t operand) {
-    uint16_t temp = A - operand;
+    uint16_t temp = (uint16_t)A - (uint16_t)operand;
     Setflag(FLAG_C, A >= operand);
     Setflag(FLAG_Z, (temp & 0xFF) == 0);
     Setflag(FLAG_N, (temp & 0x80) != 0);
@@ -875,7 +918,7 @@ void CPU::PHA() {
 }
 
 void CPU::PHP() {
-     stack_push(status);
+    stack_push(status | FLAG_B | FLAG_Ig);
 }
 
 void CPU::PLA() {
@@ -885,7 +928,8 @@ void CPU::PLA() {
 }
 
 void CPU::PLP() {
-    status = stack_pop();
+    uint8_t popped_status = stack_pop();
+    status = (popped_status & ~FLAG_B & ~FLAG_Ig) | (status & (FLAG_B | FLAG_Ig));
 }
 
 void CPU::ROL_accumulator() {
@@ -925,7 +969,8 @@ void CPU::ROR(uint16_t address) {
 }
 
 void CPU::RTI() {
-    status = stack_pop();
+    uint8_t popped_status = stack_pop();
+    status = (popped_status & ~(FLAG_B | FLAG_Ig)) | (status & (FLAG_B | FLAG_Ig));
     PC = stack_pop16();
 }
 

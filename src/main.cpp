@@ -6,7 +6,7 @@
 int main() {
     Bus bus;
     
-    Cartridge cart("../../nestest.nes");
+    Cartridge cart("../../smb.nes");
 
     bus.insert_cartridge(&cart);
 
