@@ -36,32 +36,63 @@ int main() {
         return -1;
     }
     
+    const int FPS = 60;
+    const float FRAME_DURATION_MS = 1000.0f / FPS;
+    uint32_t frame_start_ticks;
+    int frame_time;
+    
     bool quit = false;
     SDL_Event e;
     
     while (!quit) {
+        frame_start_ticks = SDL_GetTicks();
+        
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
             }
-        }
-        bus.cpu.clock();
-        bus.ppu.clock();
-        bus.ppu.clock();
-        bus.ppu.clock();
-
-        // Проверяем, не завершился ли кадр, чтобы его отрисовать
-        if (bus.ppu.frame_complete) {
-            SDL_UpdateTexture(texture, nullptr, bus.ppu.get_screen(), 256 * sizeof(uint32_t));
             
-            SDL_RenderClear(renderer);
-            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
-            bus.ppu.frame_complete = false;
-        }
-        
+            if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                bool pressed = (e.type == SDL_KEYDOWN);
 
+                switch (e.key.keysym.sym) {
+                    case SDLK_z:      bus.controller[0].set_button_state(Controller::A, pressed); break;
+                    case SDLK_x:      bus.controller[0].set_button_state(Controller::B, pressed); break;
+                    case SDLK_a:      bus.controller[0].set_button_state(Controller::SELECT, pressed); break;
+                    case SDLK_s:      bus.controller[0].set_button_state(Controller::START, pressed); break;
+                    case SDLK_UP:     bus.controller[0].set_button_state(Controller::UP, pressed); break;
+                    case SDLK_DOWN:   bus.controller[0].set_button_state(Controller::DOWN, pressed); break;
+                    case SDLK_LEFT:   bus.controller[0].set_button_state(Controller::LEFT, pressed); break;
+                    case SDLK_RIGHT:  bus.controller[0].set_button_state(Controller::RIGHT, pressed); break;
+                }
+            }
+        }
+
+
+        
         bus.ppu.frame_complete = false;
+        while (!bus.ppu.frame_complete) {
+            bus.cpu.clock();
+            bus.ppu.clock();
+            bus.ppu.clock();
+            bus.ppu.clock();
+            if(bus.cpu.is_instruction_complete()){
+//                bus.cpu.log_status();s
+//                bus.ppu.log_status();
+//                std::cout<<std::endl;
+            }
+        }
+
+        SDL_UpdateTexture(texture, nullptr, bus.ppu.get_screen(), 256 * sizeof(uint32_t));
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        SDL_RenderPresent(renderer);
+
+        int frame_time_ms = SDL_GetTicks() - frame_start_ticks;
+        if (frame_time_ms < FRAME_DURATION_MS) {
+            SDL_Delay(FRAME_DURATION_MS - frame_time_ms);
+        }
+
     }
 
     SDL_DestroyTexture(texture);

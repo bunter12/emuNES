@@ -103,14 +103,17 @@ void CPU::reset() {
     uint16_t low_byte = read(0xFFFC);
     uint16_t high_byte = read(0xFFFD);
     PC = (high_byte << 8) | low_byte;
-    std::cout<<"First PC: "<< PC;
     A = 0;
     X = 0;
     Y = 0;
     SP = 0xFD;
-    status = 0x00 | FLAG_Ig;
+    status = 0x00 | FLAG_Ig | FLAG_I ;
 
-    cycles_left = 8;
+    cycles_left = 7;
+}
+
+bool CPU::is_instruction_complete() {
+    return cycles_left == 0;
 }
 
 void CPU::turn_off() {
@@ -122,13 +125,7 @@ void CPU::turn_on() {
 }
 
 void CPU::nmi() {
-    stack_push16(PC);
-    stack_push(status);
-    
-    Setflag(FLAG_I, true);
-    
-    PC = read16(0xFFFA);
-    cycles_left+=8;
+    nmi_pending = true;
 }
 
 void CPU::clock() {
@@ -136,7 +133,22 @@ void CPU::clock() {
         cycles_left--;
         return;
     }
-    printf("CPU Clock - PC: %04X\n", PC);
+    
+    if (nmi_pending) {
+        nmi_pending = false;
+        
+        stack_push16(PC);
+        Setflag(FLAG_B, false);
+        Setflag(FLAG_Ig, true);
+        Setflag(FLAG_I, true);
+        stack_push(status);
+        PC = read16(0xFFFA);
+        
+        cycles_left = 8;
+        cycles_left--;
+        return;
+    }
+    
     uint8_t opcode = fetch();
     int instruction_cycles = cycles[opcode];
     int additional_cycles = 0;
@@ -981,8 +993,9 @@ void CPU::ROR(uint16_t address) {
 }
 
 void CPU::RTI() {
-    uint8_t popped_status = stack_pop();
-    status = (popped_status & ~(FLAG_B | FLAG_Ig)) | (status & (FLAG_B | FLAG_Ig));
+    status = stack_pop();
+    status &= ~FLAG_B;
+    status |=  FLAG_Ig;
     PC = stack_pop16();
 }
 

@@ -3,6 +3,7 @@
 #include <cpu.h>
 #include <ppu.h>
 #include <cartridge.h>
+#include <controller.h>
 
 class Bus{
 public:
@@ -18,9 +19,9 @@ public:
     CPU cpu;
     PPU ppu;
     Cartridge* cart = nullptr;
+    Controller controller[2];
+    
     void nmi();
-    
-    
     
 private:
     std::array<uint8_t, 2048> cpu_ram;

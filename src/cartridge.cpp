@@ -88,7 +88,7 @@ bool Cartridge::cpu_write(uint16_t address, uint8_t data) {
 
 bool Cartridge::ppu_read(uint16_t address, uint8_t& data) {
     if (address >= 0x0000 && address <= 0x1FFF) {
-        data = chr_memory[address]; 
+        data = chr_memory[address];
         return true;
     }
     return false;

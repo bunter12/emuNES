@@ -27,10 +27,10 @@ public:
     
     void log_status();
     void reset();
+    uint8_t oam[256];
     
 private:
     
-    uint8_t oam[256];
     uint8_t oam_addr = 0x00;
     
     uint8_t vram[2048];
@@ -45,6 +45,20 @@ private:
     uint8_t fine_x_scroll = 0;
     bool address_latch_w = false;
     
+    struct OAM_Entry {
+        uint8_t y;
+        uint8_t tile_id;
+        uint8_t attribute;
+        uint8_t x;
+    } secondary_oam[8];
+        
+    uint8_t sprite_count;
+        
+    uint8_t sprite_shifter_pattern_lo[8];
+    uint8_t sprite_shifter_pattern_hi[8];
+    
+    bool sprite_zero_hit_possible = false;
+    bool sprite_zero_being_rendered = false;
     
     uint16_t bg_shifter_pattern_lo = 0x0000;
     uint16_t bg_shifter_pattern_hi = 0x0000;
@@ -71,17 +85,6 @@ private:
     void transfer_address_y();
     void load_background_shifters();
     void update_shifters();
-    
-    struct OAM_Entry {
-        uint8_t y;
-        uint8_t tile_id;
-        uint8_t attribute;
-        uint8_t x;
-    } secondary_oam[8];
-    uint8_t sprite_count = 0;
-    
-    uint8_t sprite_shifter_pattern_lo[8];
-    uint8_t sprite_shifter_pattern_hi[8];
     
     Bus* bus = nullptr;
 
