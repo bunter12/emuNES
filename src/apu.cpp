@@ -1,295 +1,161 @@
-#include <apu.h>
+#include "apu.h"
 
-// Lookup tables
-const uint8_t APU::length_table[32] = {
+static const uint8_t length_table[] = {
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
     12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
 };
 
-const uint8_t APU::duty_table[4][8] = {
-    {0, 1, 0, 0, 0, 0, 0, 0}, // 12.5%
-    {0, 1, 1, 0, 0, 0, 0, 0}, // 25%
-    {0, 1, 1, 1, 1, 0, 0, 0}, // 50%
-    {1, 0, 0, 1, 1, 1, 1, 1}  // 75% (inverted 25%)
+static uint8_t pulse_sequence[4] = {
+    0b00000001,
+    0b00000011,
+    0b00001111,
+    0b11111100
 };
 
-const uint16_t APU::noise_period_table[16] = {
-    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
-};
+APU::APU() {}
+APU::~APU() {}
 
-const uint16_t APU::dmc_rate_table[16] = {
-    428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54
-};
-
-
-void APU::reset() {
-    // Reset square channels
-    square1 = Square();
-    square2 = Square();
-    
-    // Reset triangle channel
-    triangle = Triangle();
-    
-    // Reset noise channel
-    noise = Noise();
-    noise.shift_register = 1;
-    
-    // Reset DMC
-    dmc = DMC();
-    
-    // Reset frame counter
-    frame_counter = 0;
-    frame_irq_enabled = false;
-    frame_irq_flag = false;
-}
-
-void APU::write_register(uint16_t address, uint8_t data) {
-    switch(address) {
-        // Square 1
-        case 0x4000:
-            square1.duty = (data >> 6) & 0x03;
-            square1.volume = data & 0x0F;
-            square1.constant_volume = (data & 0x10) != 0;
-            square1.envelope = data & 0x0F;
-            break;
-        case 0x4001:
-            square1.sweep_enabled = (data & 0x80) != 0;
-            square1.sweep_period = (data >> 4) & 7;
-            square1.sweep_negate = (data & 0x08) != 0;
-            square1.sweep_shift = data & 7;
-            break;
-        case 0x4002:
-            square1.timer = (square1.timer & 0xFF00) | data;
-            break;
-        case 0x4003:
-            square1.timer = (square1.timer & 0x00FF) | ((data & 7) << 8);
-            square1.length_counter = length_table[data >> 3];
-            square1.sequence_pos = 0;
-            break;
-            
-        // Square 2 (аналогично Square 1)
-        case 0x4004:
-            square2.duty = (data >> 6) & 0x03;
-            square2.volume = data & 0x0F;
-            square2.constant_volume = (data & 0x10) != 0;
-            square2.envelope = data & 0x0F;
-            break;
-            
-        // Triangle
-        case 0x4008:
-            triangle.linear_counter = data & 0x7F;
-            break;
-        case 0x400A:
-            triangle.timer = (triangle.timer & 0xFF00) | data;
-            break;
-        case 0x400B:
-            triangle.timer = (triangle.timer & 0x00FF) | ((data & 7) << 8);
-            triangle.length_counter = length_table[data >> 3];
-            break;
-            
-        // Noise
-        case 0x400C:
-            noise.volume = data & 0x0F;
-            noise.constant_volume = (data & 0x10) != 0;
-            noise.envelope = data & 0x0F;
-            break;
-        case 0x400E:
-            noise.mode = (data & 0x80) != 0;
-            noise.timer = noise_period_table[data & 0x0F];
-            break;
-        case 0x400F:
-            noise.length_counter = length_table[data >> 3];
-            break;
-            
-        // Status
-        case 0x4015:
-            square1.enabled = (data & 0x01) != 0;
-            square2.enabled = (data & 0x02) != 0;
-            triangle.enabled = (data & 0x04) != 0;
-            noise.enabled = (data & 0x08) != 0;
-            dmc.enabled = (data & 0x10) != 0;
-            break;
+void APU::cpu_write(uint16_t address, uint8_t data) {
+    switch (address) {
+    case 0x4000:
+        pulse1.duty_mode = (data & 0xC0) >> 6;
+        pulse1.length_halt = (data & 0x20);
+        pulse1.envelope_loop = (data & 0x20);
+        pulse1.constant_volume = (data & 0x10);
+        pulse1.constant_volume_val = (data & 0x0F);
+        pulse1.envelope_period = (data & 0x0F);
+        break;
+    case 0x4001:
+        pulse1.sweep_enable = (data & 0x80);
+        pulse1.sweep_period = (data & 0x70) >> 4;
+        pulse1.sweep_negate = (data & 0x08);
+        pulse1.sweep_shift = (data & 0x07);
+        pulse1.sweep_reload = true;
+        break;
+    case 0x4002:
+        pulse1.timer_period = (pulse1.timer_period & 0xFF00) | data;
+        break;
+    case 0x4003:
+        pulse1.timer_period = (pulse1.timer_period & 0x00FF) | ((uint16_t)(data & 0x07) << 8);
+        if (pulse1.enabled) {
+            pulse1.length_value = length_table[(data & 0xF8) >> 3];
+        }
+        pulse1.sequence_pos = 0;
+        pulse1.envelope_start = true;
+        break;
+    case 0x4004:
+        pulse2.duty_mode = (data & 0xC0) >> 6;
+        pulse2.length_halt = (data & 0x20);
+        pulse2.envelope_loop = (data & 0x20);
+        pulse2.constant_volume = (data & 0x10);
+        pulse2.constant_volume_val = (data & 0x0F);
+        pulse2.envelope_period = (data & 0x0F);
+        break;
+    case 0x4005:
+        pulse2.sweep_enable = (data & 0x80);
+        pulse2.sweep_period = (data & 0x70) >> 4;
+        pulse2.sweep_negate = (data & 0x08);
+        pulse2.sweep_shift = (data & 0x07);
+        pulse2.sweep_reload = true;
+        break;
+    case 0x4006:
+        pulse2.timer_period = (pulse2.timer_period & 0xFF00) | data;
+        break;
+    case 0x4007:
+        pulse2.timer_period = (pulse2.timer_period & 0x00FF) | ((uint16_t)(data & 0x07) << 8);
+        if (pulse2.enabled) {
+            pulse2.length_value = length_table[(data & 0xF8) >> 3];
+        }
+        pulse2.sequence_pos = 0;
+        pulse2.envelope_start = true;
+        break;
+    case 0x4015:
+        pulse1.enabled = (data & 0x01);
+        pulse2.enabled = (data & 0x02);
+        if (!pulse1.enabled) pulse1.length_value = 0;
+        if (!pulse2.enabled) pulse2.length_value = 0;
+        break;
     }
 }
 
-uint8_t APU::read_register(uint16_t address) {
-    if (address == 0x4015) {
-        uint8_t status = 0;
-        status |= (square1.length_counter > 0) ? 0x01 : 0;
-        status |= (square2.length_counter > 0) ? 0x02 : 0;
-        status |= (triangle.length_counter > 0) ? 0x04 : 0;
-        status |= (noise.length_counter > 0) ? 0x08 : 0;
-        status |= (dmc.bits_remaining > 0) ? 0x10 : 0;
-        status |= frame_irq_flag ? 0x40 : 0;
-        status |= dmc.irq_enabled ? 0x80 : 0;
-        
-        frame_irq_flag = false;
-        return status;
-    }
-    return 0;
+uint8_t APU::cpu_read(uint16_t address) {
+    return 0x00;
 }
 
-void APU::step() {
-    // Update frame counter
-    frame_counter++;
-    if (frame_counter >= 14915) {
-        frame_counter = 0;
-        clock_envelope();
-        clock_sweep();
-        clock_length();
-        clock_linear();
-    }
-    
-    // Update channels
-    update_square(square1, 0);
-    update_square(square2, 1);
-    update_triangle();
-    update_noise();
-    update_dmc();
-}
-
-float APU::get_audio_sample() {
-    float square_out = 0.0f;
-    if (square1.enabled) {
-        square_out += duty_table[square1.duty][square1.sequence_pos] * 
-                     (square1.constant_volume ? square1.volume : square1.envelope) / 15.0f;
-    }
-    if (square2.enabled) {
-        square_out += duty_table[square2.duty][square2.sequence_pos] * 
-                     (square2.constant_volume ? square2.volume : square2.envelope) / 15.0f;
-    }
-    square_out *= 0.5f;
-    
-    float triangle_out = 0.0f;
-    if (triangle.enabled && triangle.length_counter > 0) {
-        triangle_out = (triangle.sequence_pos < 16 ? triangle.sequence_pos : 31 - triangle.sequence_pos) / 15.0f;
-    }
-    
-    float noise_out = 0.0f;
-    if (noise.enabled && noise.length_counter > 0) {
-        noise_out = ((noise.shift_register & 1) * 
-                    (noise.constant_volume ? noise.volume : noise.envelope)) / 15.0f;
-    }
-    
-    float dmc_out = dmc.output_level / 127.0f;
-    
-    // Mix all channels
-    return 0.25f * (square_out + triangle_out + noise_out + dmc_out);
-}
-
-void APU::update_square(Square& square, uint8_t channel) {
-    if (!square.enabled) return;
-    
-    if (square.timer > 0) {
-        square.timer--;
+void APU::clock_pulse(PulseChannel& p) {
+    if (p.timer > 0) {
+        p.timer--;
     } else {
-        square.timer = ((square.timer & 0x700) >> 8) | ((square.timer & 0xFF) << 1);
-        square.sequence_pos = (square.sequence_pos + 1) & 7;
+        p.timer = p.timer_period;
+        p.sequence_pos++;
+        p.sequence_pos &= 0x07;
     }
 }
 
-void APU::update_triangle() {
-    if (!triangle.enabled) return;
-    
-    if (triangle.timer > 0) {
-        triangle.timer--;
+void APU::clock_length(PulseChannel& p) {
+    if (p.length_value > 0 && !p.length_halt) {
+        p.length_value--;
+    }
+}
+
+void APU::clock_envelope(PulseChannel& p) {
+    if (p.envelope_start) {
+        p.envelope_start = false;
+        p.envelope_counter = p.envelope_period + 1;
+        p.volume_envelope = 15;
     } else {
-        triangle.timer = ((triangle.timer & 0x700) >> 8) | ((triangle.timer & 0xFF) << 1);
-        if (triangle.length_counter > 0 && triangle.linear_counter > 0) {
-            triangle.sequence_pos = (triangle.sequence_pos + 1) & 31;
-        }
-    }
-}
-
-void APU::update_noise() {
-    if (!noise.enabled) return;
-    
-    if (noise.timer > 0) {
-        noise.timer--;
-    } else {
-        noise.timer = noise_period_table[noise.mode ? 6 : 0];
-        uint16_t feedback = ((noise.shift_register & 1) ^ 
-                           ((noise.shift_register >> (noise.mode ? 6 : 1)) & 1)) << 14;
-        noise.shift_register = (noise.shift_register >> 1) | feedback;
-    }
-}
-
-void APU::update_dmc() {
-    if (!dmc.enabled) return;
-    
-    if (dmc.timer > 0) {
-        dmc.timer--;
-        return;
-    }
-    
-    dmc.timer = dmc_rate_table[0];
-    
-    if (dmc.bits_remaining == 0) {
-        if (dmc.sample_length > 0) {
-            dmc.bits_remaining = 8;
-            dmc.sample_buffer = 0;
-            dmc.sample_length--;
-        } else if (dmc.loop_flag) {
-            dmc.sample_length = (dmc.sample_address << 4) | 1;
-            dmc.bits_remaining = 8;
-            dmc.sample_buffer = 0;
-        }
-    }
-    
-    if (dmc.bits_remaining > 0) {
-        if (dmc.sample_buffer & 1) {
-            if (dmc.output_level <= 125) dmc.output_level += 2;
+        if (p.envelope_counter > 0) {
+            p.envelope_counter--;
         } else {
-            if (dmc.output_level >= 2) dmc.output_level -= 2;
+            p.envelope_counter = p.envelope_period;
+            if (p.volume_envelope > 0) {
+                p.volume_envelope--;
+            } else if (p.envelope_loop) {
+                p.volume_envelope = 15;
+            }
         }
-        dmc.sample_buffer >>= 1;
-        dmc.bits_remaining--;
     }
 }
 
-void APU::clock_envelope() {
-    if (!square1.constant_volume && square1.envelope > 0) {
-        square1.envelope--;
-    }
-    if (!square2.constant_volume && square2.envelope > 0) {
-        square2.envelope--;
-    }
-    if (!noise.constant_volume && noise.envelope > 0) {
-        noise.envelope--;
-    }
-}
+void APU::clock() {
+    frame_clock_counter++;
 
-void APU::clock_sweep() {
-    if (square1.sweep_enabled) {
-        uint16_t delta = square1.timer >> square1.sweep_shift;
-        if (square1.sweep_negate) {
-            square1.sweep_target = square1.timer - delta;
-            if (square1.sweep_target > 0x7FF) square1.enabled = false;
-        } else {
-            square1.sweep_target = square1.timer + delta;
-        }
+    if (frame_clock_counter % 7457 == 0) {
+        clock_envelope(pulse1);
+        clock_envelope(pulse2);
     }
     
-    if (square2.sweep_enabled) {
-        uint16_t delta = square2.timer >> square2.sweep_shift;
-        if (square2.sweep_negate) {
-            square2.sweep_target = square2.timer - delta;
-            if (square2.sweep_target > 0x7FF) square2.enabled = false;
-        } else {
-            square2.sweep_target = square2.timer + delta;
+    if (frame_clock_counter % 14914 == 0) {
+        clock_length(pulse1);
+        clock_length(pulse2);
+    }
+
+    if (frame_clock_counter % 2 == 0) {
+        clock_pulse(pulse1);
+        clock_pulse(pulse2);
+    }
+    
+    global_time += time_per_clock;
+    if (global_time >= time_per_sample) {
+        global_time -= time_per_sample;
+        sample_ready = true;
+        output_sample = get_output_sample();
+    }
+}
+
+float APU::get_output_sample() {
+    auto get_pulse_sample = [&](PulseChannel& p) -> float {
+        if (p.enabled && p.length_value > 0 && p.timer_period > 8) {
+            if (pulse_sequence[p.duty_mode] & (1 << (7 - p.sequence_pos))) {
+                uint8_t vol = p.constant_volume ? p.constant_volume_val : p.volume_envelope;
+                return (float)vol / 15.0f;
+            }
         }
-    }
-}
+        return 0.0f;
+    };
 
-void APU::clock_length() {
-    if (square1.length_counter > 0) square1.length_counter--;
-    if (square2.length_counter > 0) square2.length_counter--;
-    if (triangle.length_counter > 0) triangle.length_counter--;
-    if (noise.length_counter > 0) noise.length_counter--;
-}
-
-void APU::clock_linear() {
-    if (triangle.linear_counter > 0) {
-        triangle.linear_counter--;
-    }
+    float p1 = get_pulse_sample(pulse1);
+    float p2 = get_pulse_sample(pulse2);
+    
+    return (p1 + p2) * 0.1f;
 }

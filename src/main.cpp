@@ -3,58 +3,55 @@
 #include "bus.h"
 #include "cartridge.h"
 
-int main() {
-    Bus bus;
-    
-    Cartridge cart("/Users/kiramsabirzanov/projects/emuNES/smb.nes");
-    
-    bus.insert_cartridge(&cart);
+Bus bus;
 
+int main(int argc, char* argv[]) {
+
+    Cartridge cart("/Users/kiramsabirzanov/projects/emuNES/dk.nes");
+
+    bus.insert_cartridge(&cart);
     bus.cpu.reset();
     bus.ppu.reset();
     bus.ppu.cycle = 21;
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "SDL не смог инициализироваться! Ошибка: " << SDL_GetError() << std::endl;
+
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+        std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
         return -1;
     }
 
+    SDL_AudioSpec want;
+    SDL_zero(want);
+    want.freq = 44100;
+    want.format = AUDIO_F32;
+    want.channels = 1;
+    want.samples = 1024;
+    want.callback = NULL;
+
+    SDL_AudioDeviceID audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+    if (audio_device == 0) {
+        std::cerr << "Failed to open audio: " << SDL_GetError() << std::endl;
+        return -1;
+    }
+    SDL_PauseAudioDevice(audio_device, 0);
+
     SDL_Window* window = SDL_CreateWindow("emuNES", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256 * 2, 240 * 2, SDL_WINDOW_SHOWN);
-    if (!window) {
-        std::cerr << "Окно не может быть создано! Ошибка: " << SDL_GetError() << std::endl;
-        return -1;
-    }
-    
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        std::cerr << "Рендерер не может быть создан! Ошибка: " << SDL_GetError() << std::endl;
-        
-        return -1;
-    }
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
-    if (!texture) {
-        std::cerr << "Текстура не может быть создана! Ошибка: " << SDL_GetError() << std::endl;
-        return -1;
-    }
-    
-    const int FPS = 60;
-    const float FRAME_DURATION_MS = 1000.0f / FPS;
-    uint32_t frame_start_ticks;
-    int frame_time;
-    
+
+    const float FRAME_DURATION_MS = 1000.0f / 60.0f;
+
     bool quit = false;
     SDL_Event e;
-    
+
     while (!quit) {
-        frame_start_ticks = SDL_GetTicks();
-        
+        uint32_t frame_start = SDL_GetTicks();
+
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
             }
-            
             if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
                 bool pressed = (e.type == SDL_KEYDOWN);
-
                 switch (e.key.keysym.sym) {
                     case SDLK_z:      bus.controller[0].set_button_state(Controller::A, pressed); break;
                     case SDLK_x:      bus.controller[0].set_button_state(Controller::B, pressed); break;
@@ -68,33 +65,45 @@ int main() {
             }
         }
 
-
-        
-        bus.ppu.frame_complete = false;
+        if (SDL_GetQueuedAudioSize(audio_device) > 4096 * sizeof(float)) {
+            SDL_Delay(1);
+            continue;
+        }
         while (!bus.ppu.frame_complete) {
             bus.cpu.clock();
+            
+            bus.apu.clock();
+            
             bus.ppu.clock();
             bus.ppu.clock();
             bus.ppu.clock();
-            if(bus.cpu.is_instruction_complete()){
-//                bus.cpu.log_status();s
-//                bus.ppu.log_status();
-//                std::cout<<std::endl;
+
+            if (bus.apu.sample_ready) {
+                bus.apu.sample_ready = false;
+                float sample = bus.apu.get_output_sample();
+                static int log_counter = 0;
+                if (sample != 0.0f && log_counter < 10) {
+                    printf("Audio Sample: %f\n", sample);
+                    log_counter++;
+                }
+                SDL_QueueAudio(audio_device, &sample, sizeof(float));
             }
         }
+
+        bus.ppu.frame_complete = false;
 
         SDL_UpdateTexture(texture, nullptr, bus.ppu.get_screen(), 256 * sizeof(uint32_t));
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
 
-        int frame_time_ms = SDL_GetTicks() - frame_start_ticks;
-        if (frame_time_ms < FRAME_DURATION_MS) {
-            SDL_Delay(FRAME_DURATION_MS - frame_time_ms);
+        uint32_t frame_time = SDL_GetTicks() - frame_start;
+        if (frame_time < FRAME_DURATION_MS) {
+            SDL_Delay((uint32_t)(FRAME_DURATION_MS - frame_time));
         }
-
     }
 
+    SDL_CloseAudioDevice(audio_device);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

@@ -3,8 +3,6 @@
 #include <iostream>
 #include <cstdint>
 
-
-
 class Bus;
 
 class PPU {

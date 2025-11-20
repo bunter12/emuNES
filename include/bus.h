@@ -1,6 +1,7 @@
 #ifndef BUS_H
 #define BUS_H
 #include <cpu.h>
+#include <apu.h>
 #include <ppu.h>
 #include <cartridge.h>
 #include <controller.h>
@@ -18,6 +19,7 @@ public:
     void insert_cartridge(Cartridge* cartridge);
     CPU cpu;
     PPU ppu;
+    APU apu;
     Cartridge* cart = nullptr;
     Controller controller[2];
     

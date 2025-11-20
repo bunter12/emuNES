@@ -21,12 +21,22 @@ add_library(core_logic STATIC
 target_include_directories(core_logic PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
-add_executable(${PROJECT_NAME} src/main.cpp)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE core_logic)
+include_directories(/opt/homebrew/include/SDL2)
 
 find_package(SDL2 REQUIRED)
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${SDL2_INCLUDE_DIRS})
+find_package(SDL2_mixer REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${SDL2_LIBRARIES})
+add_executable(${PROJECT_NAME} src/main.cpp)
+
+target_include_directories(emuNES PRIVATE
+    ${SDL2_INCLUDE_DIRS}
+    ${SDL2_MIXER_INCLUDE_DIRS}
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    core_logic
+    ${SDL2_LIBRARIES}
+    /opt/homebrew/lib/libSDL2_mixer.dylib
+)

@@ -18,6 +18,9 @@ void Bus::cpu_write(uint16_t address, uint8_t data) {
         controller[0].write(data);
         controller[1].write(data);
     }
+    else if (address >= 0x4000 && address <= 0x4017) {
+        apu.cpu_write(address, data);
+    }
 }
 
 uint8_t Bus::cpu_read(uint16_t address) {
@@ -41,6 +44,7 @@ uint8_t Bus::cpu_read(uint16_t address) {
 Bus::Bus() {
     cpu.connect_bus(this);
     ppu.connect_bus(this);
+    apu.connect_bus(this);
 }
 
 void Bus::insert_cartridge(Cartridge* cartridge) {
