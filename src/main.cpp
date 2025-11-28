@@ -7,7 +7,7 @@ Bus bus;
 
 int main(int argc, char* argv[]) {
 
-    Cartridge cart("/Users/kiramsabirzanov/projects/emuNES/dk.nes");
+    Cartridge cart("/Users/kiramsabirzanov/projects/emuNES/apu_test.nes");
 
     bus.insert_cartridge(&cart);
     bus.cpu.reset();
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     SDL_PauseAudioDevice(audio_device, 0);
 
     SDL_Window* window = SDL_CreateWindow("emuNES", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256 * 2, 240 * 2, SDL_WINDOW_SHOWN);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
 
     const float FRAME_DURATION_MS = 1000.0f / 60.0f;
@@ -81,11 +81,6 @@ int main(int argc, char* argv[]) {
             if (bus.apu.sample_ready) {
                 bus.apu.sample_ready = false;
                 float sample = bus.apu.get_output_sample();
-                static int log_counter = 0;
-                if (sample != 0.0f && log_counter < 10) {
-                    printf("Audio Sample: %f\n", sample);
-                    log_counter++;
-                }
                 SDL_QueueAudio(audio_device, &sample, sizeof(float));
             }
         }

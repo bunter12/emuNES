@@ -95,9 +95,6 @@ void PPU::cpu_write(uint16_t address, uint8_t data) {
             break;
         case 0x0004: // OAMDATA
             oam[oam_addr] = data;
-            if (oam_addr >= 0 && oam_addr <= 3) {
-                printf("[OAM Write] Addr: $%02X, Data: $%02X\n", oam_addr, data);
-            }
             oam_addr++;
             break;
         case 0x0005: // PPUSCROLL
