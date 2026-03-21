@@ -24,11 +24,13 @@ public:
     void clock();
     void connect_bus(Bus* b) { bus = b; }
     void nmi();
+    void irq();
     bool is_instruction_complete();
     
 private:
     
     bool nmi_pending = false;
+    bool irq_pending = false;
     
     uint8_t cycles_left = 0;
     

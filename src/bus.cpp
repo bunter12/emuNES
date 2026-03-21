@@ -35,6 +35,9 @@ uint8_t Bus::cpu_read(uint16_t address) {
     else if (address == 0x4016) {
         data = controller[0].read();
     }
+    else if (address == 0x4015) {
+        data = apu.cpu_read(address);
+    }
     else if (address == 0x4017) {
         data = controller[1].read();
     }
@@ -53,6 +56,10 @@ void Bus::insert_cartridge(Cartridge* cartridge) {
 
 void Bus::nmi() {
     cpu.nmi();
+}
+
+void Bus::irq() {
+    cpu.irq();
 }
 
 bool Bus::ppu_read(uint16_t address, uint8_t& data) {

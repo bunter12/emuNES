@@ -128,6 +128,10 @@ void CPU::nmi() {
     nmi_pending = true;
 }
 
+void CPU::irq() {
+    irq_pending = true;
+}
+
 void CPU::clock() {
     if (cycles_left > 0) {
         cycles_left--;
@@ -145,6 +149,21 @@ void CPU::clock() {
         PC = read16(0xFFFA);
         
         cycles_left = 8;
+        cycles_left--;
+        return;
+    }
+
+    if (irq_pending && !Getflag(FLAG_I)) {
+        irq_pending = false;
+
+        stack_push16(PC);
+        Setflag(FLAG_B, false);
+        Setflag(FLAG_Ig, true);
+        Setflag(FLAG_I, true);
+        stack_push(status);
+        PC = read16(0xFFFE);
+
+        cycles_left = 7;
         cycles_left--;
         return;
     }

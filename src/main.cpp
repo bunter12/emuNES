@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <SDL2/SDL.h>
 #include "bus.h"
 #include "cartridge.h"
@@ -6,12 +7,17 @@
 Bus bus;
 
 int main(int argc, char* argv[]) {
+    std::string rom_path = "/Users/kiramsabirzanov/projects/emuNES/nestest.nes";
+    if (argc > 1) {
+        rom_path = argv[1];
+    }
 
-    Cartridge cart("/Users/kiramsabirzanov/projects/emuNES/apu_test.nes");
+    Cartridge cart(rom_path);
 
     bus.insert_cartridge(&cart);
     bus.cpu.reset();
     bus.ppu.reset();
+    bus.apu.reset();
     bus.ppu.cycle = 21;
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
@@ -34,7 +40,7 @@ int main(int argc, char* argv[]) {
     }
     SDL_PauseAudioDevice(audio_device, 0);
 
-    SDL_Window* window = SDL_CreateWindow("emuNES", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256 * 2, 240 * 2, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow("emuNES", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256 * 4, 240 * 4, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
 
@@ -80,7 +86,7 @@ int main(int argc, char* argv[]) {
 
             if (bus.apu.sample_ready) {
                 bus.apu.sample_ready = false;
-                float sample = bus.apu.get_output_sample();
+                float sample = bus.apu.output_sample;
                 SDL_QueueAudio(audio_device, &sample, sizeof(float));
             }
         }
