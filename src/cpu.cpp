@@ -128,8 +128,8 @@ void CPU::nmi() {
     nmi_pending = true;
 }
 
-void CPU::irq() {
-    irq_pending = true;
+void CPU::set_irq_line(bool asserted) {
+    irq_line = asserted;
 }
 
 void CPU::clock() {
@@ -153,9 +153,7 @@ void CPU::clock() {
         return;
     }
 
-    if (irq_pending && !Getflag(FLAG_I)) {
-        irq_pending = false;
-
+    if (irq_line && !Getflag(FLAG_I)) {
         stack_push16(PC);
         Setflag(FLAG_B, false);
         Setflag(FLAG_Ig, true);
@@ -391,7 +389,7 @@ void CPU::clock() {
             CPX(read(fetch()));
             break;
         case 0xEC:
-            CPX(fetch16());
+            CPX(read(fetch16()));
             break;
         case 0xC0:
             CPY(fetch());
@@ -400,7 +398,7 @@ void CPU::clock() {
             CPY(read(fetch()));
             break;
         case 0xCC:
-            CPY(fetch16());
+            CPY(read(fetch16()));
             break;
         case 0xC6:
             DEC(fetch());
@@ -1095,8 +1093,8 @@ void CPU::stack_push(uint8_t value) {
 }
 
 void CPU::stack_push16(uint16_t value) {
-    stack_push((value >> 8) & 0xFF);  // Push high byte
-    stack_push(value & 0xFF);         // Push low byte
+    stack_push((value >> 8) & 0xFF);
+    stack_push(value & 0xFF);
 }
 
 uint8_t CPU::stack_pop() {
@@ -1106,9 +1104,9 @@ uint8_t CPU::stack_pop() {
 }
 
 uint16_t CPU::stack_pop16() {
-    uint8_t low = stack_pop();        // Pop low byte first
-    uint8_t high = stack_pop();       // Pop high byte
-    return (high << 8) | low;         // Combine into 16-bit value
+    uint8_t low = stack_pop();
+    uint8_t high = stack_pop();
+    return (high << 8) | low;
 }
 
 uint16_t CPU::read16(uint16_t address) {

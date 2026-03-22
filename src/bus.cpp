@@ -58,8 +58,8 @@ void Bus::nmi() {
     cpu.nmi();
 }
 
-void Bus::irq() {
-    cpu.irq();
+void Bus::set_irq_line(bool asserted) {
+    cpu.set_irq_line(asserted);
 }
 
 bool Bus::ppu_read(uint16_t address, uint8_t& data) {

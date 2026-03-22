@@ -24,7 +24,7 @@ public:
     Controller controller[2];
     
     void nmi();
-    void irq();
+    void set_irq_line(bool asserted);
     
 private:
     std::array<uint8_t, 2048> cpu_ram;

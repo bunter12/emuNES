@@ -71,6 +71,10 @@ void APU::reset() {
     dmc.sample_address = 0xC000;
     dmc.current_address = 0xC000;
     dmc.sample_length = 1;
+
+    if (bus) {
+        bus->set_irq_line(false);
+    }
 }
 
 void APU::cpu_write(uint16_t address, uint8_t data) {
@@ -166,6 +170,9 @@ void APU::cpu_write(uint16_t address, uint8_t data) {
         dmc.timer_period = dmc_rate_table[dmc.rate_index];
         if (!dmc.irq_enabled) {
             dmc.irq_flag = false;
+            if (bus) {
+                bus->set_irq_line(frame_interrupt || dmc.irq_flag);
+            }
         }
         break;
     case 0x4011:
@@ -191,6 +198,9 @@ void APU::cpu_write(uint16_t address, uint8_t data) {
 
         dmc.irq_flag = false;
         dmc.enabled = dmc_enable;
+        if (bus) {
+            bus->set_irq_line(frame_interrupt || dmc.irq_flag);
+        }
         if (!dmc.enabled) {
             dmc.bytes_remaining = 0;
         } else if (dmc.bytes_remaining == 0) {
@@ -203,6 +213,9 @@ void APU::cpu_write(uint16_t address, uint8_t data) {
         irq_inhibit = (data & 0x40) != 0;
         if (irq_inhibit) {
             frame_interrupt = false;
+            if (bus) {
+                bus->set_irq_line(frame_interrupt || dmc.irq_flag);
+            }
         }
         frame_clock_counter = 0;
         if (frame_counter_mode) {
@@ -226,6 +239,9 @@ uint8_t APU::cpu_read(uint16_t address) {
         if (frame_interrupt) data |= 0x40;
         if (dmc.irq_flag) data |= 0x80;
         frame_interrupt = false;
+        if (bus) {
+            bus->set_irq_line(frame_interrupt || dmc.irq_flag);
+        }
     }
     return data;
 }
@@ -391,7 +407,7 @@ void APU::fill_dmc_sample_buffer() {
         } else if (dmc.irq_enabled) {
             dmc.irq_flag = true;
             if (bus) {
-                bus->irq();
+                bus->set_irq_line(frame_interrupt || dmc.irq_flag);
             }
         }
     }
@@ -473,7 +489,7 @@ void APU::clock() {
             if (!irq_inhibit) {
                 frame_interrupt = true;
                 if (bus) {
-                    bus->irq();
+                    bus->set_irq_line(frame_interrupt || dmc.irq_flag);
                 }
             }
         } else if (frame_clock_counter == 29831) {
