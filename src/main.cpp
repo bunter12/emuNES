@@ -1,6 +1,12 @@
 #include <iostream>
 #include <string>
+#if __has_include(<SDL2/SDL.h>)
 #include <SDL2/SDL.h>
+#elif __has_include(<SDL.h>)
+#include <SDL.h>
+#else
+#error "SDL2 headers not found"
+#endif
 #include "bus.h"
 #include "cartridge.h"
 

@@ -11,6 +11,7 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 build
+build*
 
 ### CMake Patch ###
 CMakeUserPresets.json
@@ -28,7 +29,7 @@ CMakeUserPresets.json
 Icon
 
 # NES rom
-.nes
+*.nes
 
 
 # Thumbnails
