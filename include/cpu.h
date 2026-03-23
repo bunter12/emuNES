@@ -23,13 +23,14 @@ public:
     void turn_on();
     void clock();
     void connect_bus(Bus* b) { bus = b; }
-    void nmi();
+    void nmi(bool defer_one_instruction = false);
     void set_irq_line(bool asserted);
     bool is_instruction_complete();
     
 private:
     
     bool nmi_pending = false;
+    bool nmi_defer_one_instruction = false;
     bool irq_line = false;
     
     uint8_t cycles_left = 0;

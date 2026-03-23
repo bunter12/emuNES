@@ -124,8 +124,11 @@ void CPU::turn_on() {
     running = true;
 }
 
-void CPU::nmi() {
+void CPU::nmi(bool defer_one_instruction) {
     nmi_pending = true;
+    if (defer_one_instruction) {
+        nmi_defer_one_instruction = true;
+    }
 }
 
 void CPU::set_irq_line(bool asserted) {
@@ -139,6 +142,9 @@ void CPU::clock() {
     }
     
     if (nmi_pending) {
+        if (nmi_defer_one_instruction) {
+            nmi_defer_one_instruction = false;
+        } else {
         nmi_pending = false;
         
         stack_push16(PC);
@@ -151,6 +157,7 @@ void CPU::clock() {
         cycles_left = 8;
         cycles_left--;
         return;
+        }
     }
 
     if (irq_line && !Getflag(FLAG_I)) {

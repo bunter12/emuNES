@@ -23,6 +23,22 @@ static const uint32_t nes_palette[64] = {
     0xB8B8B8FF, 0x000000FF, 0x000000FF,
 };
 
+static constexpr uint8_t NMI_DELAY_VBLANK_EDGE = 14;
+static constexpr uint8_t NMI_DELAY_IMMEDIATE_ENABLE = 7;
+static constexpr uint8_t NMI_LATCH_WINDOW = 12;
+
+static inline bool sprite_matches_scanline(uint8_t sprite_y, int16_t target_scanline, uint8_t sprite_height) {
+    int16_t row = target_scanline - (int16_t)sprite_y - 1;
+    return row >= 0 && row < sprite_height;
+}
+
+static inline uint8_t reverse_bits_u8(uint8_t b) {
+    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+    b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+    b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+    return b;
+}
+
 PPU::PPU() {
     std::memset(screen, 0, sizeof(screen));
     reset();
@@ -35,17 +51,29 @@ uint8_t PPU::cpu_read(uint16_t address) {
     uint8_t data = 0x00;
     switch (address) {
         case 0x0002: // PPUSTATUS
-            data = reg_status;
+            data = (reg_status & 0xE0) | (ppu_data_buffer & 0x1F);
+            if (scanline == 241 && cycle == 1) {
+                suppress_vblank_set = true;
+            }
             reg_status &= ~0x80;
+            nmi_occured = false;
+            update_nmi_state();
             address_latch_w = false;
             break;
         case 0x0004: // OAMDATA
             data = oam[oam_addr];
+            if ((oam_addr & 0x03) == 0x02) {
+                data &= 0xE3;
+            }
             break;
         case 0x0007: // PPUDATA
             data = ppu_data_buffer;
-            ppu_data_buffer = ppu_read(vram_addr_v);
-            if (vram_addr_v >= 0x3F00) data = ppu_data_buffer;
+            if (vram_addr_v >= 0x3F00) {
+                data = ppu_read(vram_addr_v);
+                ppu_data_buffer = ppu_read(vram_addr_v - 0x1000);
+            } else {
+                ppu_data_buffer = ppu_read(vram_addr_v);
+            }
             vram_addr_v += (reg_ctrl & 0x04) ? 32 : 1;
             break;
         default:
@@ -68,9 +96,23 @@ void PPU::reset() {
     scanline = -1;   // pre-render
     cycle = 0;       // cycles go 0..340
     frame_complete = false;
+    odd_frame = false;
+
+    nmi_output = false;
+    nmi_occured = false;
+    nmi_previous = false;
+    nmi_delay = 0;
+    nmi_delay_immediate = false;
+    nmi_latched = false;
+    overflow_set_cycle = -1;
+    overflow_set_pending = false;
+    suppress_vblank_set = false;
+    odd_frame_cycle_skip_pending = false;
 
     sprite_count = 0;
+    sprite_count_next = 0;
     sprite_zero_hit_possible = false;
+    sprite_zero_hit_possible_next = false;
     sprite_zero_being_rendered = false;
 
     ppu_data_buffer = 0;
@@ -79,14 +121,25 @@ void PPU::reset() {
     std::fill(std::begin(palette_ram), std::end(palette_ram), 0);
     std::fill(std::begin(vram), std::end(vram), 0);
     std::fill(std::begin(secondary_oam), std::end(secondary_oam), OAM_Entry{0xFF,0xFF,0xFF,0xFF});
+    std::fill(std::begin(secondary_oam_next), std::end(secondary_oam_next), OAM_Entry{0xFF,0xFF,0xFF,0xFF});
+    std::fill(std::begin(sprite_shifter_pattern_lo), std::end(sprite_shifter_pattern_lo), 0);
+    std::fill(std::begin(sprite_shifter_pattern_hi), std::end(sprite_shifter_pattern_hi), 0);
+    std::fill(std::begin(sprite_shifter_pattern_lo_next), std::end(sprite_shifter_pattern_lo_next), 0);
+    std::fill(std::begin(sprite_shifter_pattern_hi_next), std::end(sprite_shifter_pattern_hi_next), 0);
 }
 
 void PPU::cpu_write(uint16_t address, uint8_t data) {
     switch (address) {
         case 0x0000: // PPUCTRL
+        {
+            bool old_nmi_output = nmi_output;
             reg_ctrl = data;
+            nmi_output = (reg_ctrl & 0x80) != 0;
             vram_addr_t = (vram_addr_t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
+            bool immediate_enable = (!old_nmi_output && nmi_output && nmi_occured);
+            update_nmi_state(immediate_enable);
             break;
+        }
         case 0x0001: // PPUMASK
             reg_mask = data;
             break;
@@ -136,18 +189,29 @@ uint8_t PPU::ppu_read(uint16_t address, bool read_only) {
 
     if (address >= 0x2000 && address <= 0x3EFF) {
         uint16_t addr = address & 0x0FFF;
-        auto mirror_mode = bus->cart->mirror;
+        auto mirror_mode = (bus && bus->cart) ? bus->cart->mirror : Cartridge::HORIZONTAL;
+        uint16_t mapped_addr = 0x0000;
 
-        if (mirror_mode == Cartridge::FOUR_SCREEN) {
-            data = vram[addr];
-        } else if (mirror_mode == Cartridge::VERTICAL) {
-            if (addr >= 0x0800) data = vram[addr - 0x0800];
-            else data = vram[addr];
-        } else { // HORIZONTAL
-            if (addr >= 0x0C00) data = vram[addr - 0x0800];
-            else if (addr >= 0x0400 && addr < 0x0800) data = vram[addr - 0x0400];
-            else data = vram[addr];
+        switch (mirror_mode) {
+        case Cartridge::VERTICAL:
+            mapped_addr = addr & 0x07FF;
+            break;
+        case Cartridge::HORIZONTAL:
+            mapped_addr = ((addr & 0x0800) >> 1) | (addr & 0x03FF);
+            break;
+        case Cartridge::ONESCREEN_LO:
+            mapped_addr = addr & 0x03FF;
+            break;
+        case Cartridge::ONESCREEN_HI:
+            mapped_addr = 0x0400 | (addr & 0x03FF);
+            break;
+        case Cartridge::FOUR_SCREEN:
+        default:
+            mapped_addr = addr & 0x0FFF;
+            break;
         }
+
+        data = vram[mapped_addr & 0x0FFF];
     }
     else if (address >= 0x3F00 && address <= 0x3FFF) {
         uint16_t pal = address & 0x001F;
@@ -170,17 +234,29 @@ void PPU::ppu_write(uint16_t address, uint8_t data) {
 
     if (address >= 0x2000 && address <= 0x3EFF) {
         uint16_t addr = address & 0x0FFF;
-        auto mirror_mode = bus->cart->mirror;
-        if (mirror_mode == Cartridge::VERTICAL) {
-            if (addr >= 0x0800) vram[addr - 0x0800] = data;
-            else vram[addr] = data;
-        } else if (mirror_mode == Cartridge::HORIZONTAL) {
-            if (addr >= 0x0C00) vram[addr - 0x0800] = data;
-            else if (addr >= 0x0400 && addr < 0x0800) vram[addr - 0x0400] = data;
-            else vram[addr] = data;
-        } else {
-            vram[addr] = data;
+        auto mirror_mode = (bus && bus->cart) ? bus->cart->mirror : Cartridge::HORIZONTAL;
+        uint16_t mapped_addr = 0x0000;
+
+        switch (mirror_mode) {
+        case Cartridge::VERTICAL:
+            mapped_addr = addr & 0x07FF;
+            break;
+        case Cartridge::HORIZONTAL:
+            mapped_addr = ((addr & 0x0800) >> 1) | (addr & 0x03FF);
+            break;
+        case Cartridge::ONESCREEN_LO:
+            mapped_addr = addr & 0x03FF;
+            break;
+        case Cartridge::ONESCREEN_HI:
+            mapped_addr = 0x0400 | (addr & 0x03FF);
+            break;
+        case Cartridge::FOUR_SCREEN:
+        default:
+            mapped_addr = addr & 0x0FFF;
+            break;
         }
+
+        vram[mapped_addr & 0x0FFF] = data;
     }
     else if (address >= 0x3F00 && address <= 0x3FFF) {
         uint16_t pal = address & 0x001F;
@@ -251,18 +327,109 @@ void PPU::update_shifters() {
     }
 }
 
+void PPU::update_nmi_state(bool immediate_enable) {
+    bool nmi_now = nmi_output && nmi_occured;
+    if (nmi_now && !nmi_previous) {
+        nmi_delay = immediate_enable ? NMI_DELAY_IMMEDIATE_ENABLE : NMI_DELAY_VBLANK_EDGE;
+        nmi_delay_immediate = immediate_enable;
+    } else if (!nmi_now && nmi_previous) {
+        if (nmi_delay > NMI_LATCH_WINDOW) {
+            nmi_delay = 0;
+            nmi_delay_immediate = false;
+            nmi_latched = false;
+        } else {
+            nmi_latched = true;
+        }
+    }
+    nmi_previous = nmi_now;
+}
+
 void PPU::clock() {
+    if (overflow_set_pending) {
+        reg_status |= 0x20;
+        overflow_set_pending = false;
+    }
+
+    if (nmi_delay > 0) {
+        nmi_delay--;
+        if (nmi_delay == 0 && bus && ((nmi_output && nmi_occured) || nmi_latched)) {
+            bus->nmi(nmi_delay_immediate);
+            nmi_delay_immediate = false;
+            nmi_latched = false;
+        }
+    }
+
+    if (scanline == -1 && cycle == 0) {
+        reg_status &= ~0x60;
+        nmi_occured = false;
+        update_nmi_state();
+    }
+
     if (scanline == -1 && cycle == 1) {
-        reg_status &= ~0xE0;
+        reg_status &= ~0x80;
         sprite_zero_hit_possible = false;
         sprite_zero_being_rendered = false;
+    }
+
+    if (cycle == 0 && scanline >= -1 && scanline < 240) {
+        overflow_set_cycle = -1;
+        overflow_set_pending = false;
+        if (reg_mask & 0x18) {
+            uint8_t sprite_height = (reg_ctrl & 0x20) ? 16 : 8;
+            int16_t eval_scanline = scanline + 1;
+            int eval_cycle = 65;
+            int sprites_found = 0;
+            int eighth_sprite_index = -1;
+
+            for (int i = 0; i < 64 && eval_cycle <= 256; i++) {
+                bool in_range = sprite_matches_scanline(oam[i * 4 + 0], eval_scanline, sprite_height);
+                if (sprites_found < 8) {
+                    if (in_range) {
+                        sprites_found++;
+                        if (sprites_found == 8) {
+                            eighth_sprite_index = i;
+                        }
+                        eval_cycle += 8;
+                    } else {
+                        eval_cycle += 2;
+                    }
+                }
+            }
+
+            if (sprites_found == 8 && eighth_sprite_index >= 0) {
+                int phase = 0;
+                for (int i = eighth_sprite_index + 1; i < 64 && eval_cycle <= 256; i++) {
+                    uint8_t candidate_y = oam[i * 4 + phase];
+                    if (sprite_matches_scanline(candidate_y, eval_scanline, sprite_height)) {
+                        overflow_set_cycle = eval_cycle;
+                        break;
+                    }
+                    eval_cycle += 2;
+                    phase = (phase + 1) & 0x03;
+                }
+            }
+        }
+
+        sprite_count = sprite_count_next;
+        sprite_zero_hit_possible = sprite_zero_hit_possible_next;
+        for (uint8_t i = 0; i < 8; i++) {
+            secondary_oam[i] = secondary_oam_next[i];
+            sprite_shifter_pattern_lo[i] = sprite_shifter_pattern_lo_next[i];
+            sprite_shifter_pattern_hi[i] = sprite_shifter_pattern_hi_next[i];
+        }
+    }
+
+    if (overflow_set_cycle >= 0 && cycle == overflow_set_cycle) {
+        overflow_set_pending = true;
     }
 
     if (scanline >= -1 && scanline < 240) {
 
         if ((cycle >= 2 && cycle < 258) || (cycle >= 322 && cycle < 338)) {
             update_shifters();
+        }
 
+        if ((cycle >= 1 && cycle < 257) || (cycle >= 321 && cycle < 337)) {
             switch ((cycle - 1) % 8) {
                 case 0:
                     load_background_shifters();
@@ -286,47 +453,31 @@ void PPU::clock() {
             }
         }
 
-        if (cycle >= 1 && cycle <= 256) {
-            if (reg_mask & 0x10) {
-                for (int i = 0; i < sprite_count; i++) {
-                    if (secondary_oam[i].x > 0) {
-                        secondary_oam[i].x--;
-                    } else {
-                        sprite_shifter_pattern_lo[i] <<= 1;
-                        sprite_shifter_pattern_hi[i] <<= 1;
-                    }
-                }
-            }
-        }
+        if (cycle == 255) {
+            for (auto &entry : secondary_oam_next) entry = {0xFF, 0xFF, 0xFF, 0xFF};
+            sprite_count_next = 0;
+            sprite_zero_hit_possible_next = false;
+            std::fill(std::begin(sprite_shifter_pattern_lo_next), std::end(sprite_shifter_pattern_lo_next), 0);
+            std::fill(std::begin(sprite_shifter_pattern_hi_next), std::end(sprite_shifter_pattern_hi_next), 0);
 
-        if (cycle == 257) {
-            if (reg_mask & 0x10) {
-                for (auto &entry : secondary_oam) entry = {0xFF, 0xFF, 0xFF, 0xFF};
-                sprite_count = 0;
-                sprite_zero_hit_possible = false;
-
-                uint8_t oam_entry_count = 0;
-                bool sprite_overflow = false;
+            if (reg_mask & 0x18) {
+                uint8_t sprite_height = (reg_ctrl & 0x20) ? 16 : 8;
+                int16_t eval_scanline = scanline + 1;
 
                 for (uint8_t i = 0; i < 64; i++) {
-                    int16_t diff = scanline - (int16_t)oam[i * 4 + 0];
-                    uint8_t sprite_height = (reg_ctrl & 0x20) ? 16 : 8;
-                    if (i == 0) {
+                    if (!sprite_matches_scanline(oam[i * 4 + 0], eval_scanline, sprite_height)) {
+                        continue;
                     }
-                    if (diff >= 0 && diff < sprite_height) {
-                        if (oam_entry_count < 8) {
-                            if (i == 0) {
-                                 sprite_zero_hit_possible = true;
-                             }
-                            secondary_oam[oam_entry_count] = *(OAM_Entry*)&oam[i * 4];
-                            oam_entry_count++;
-                        } else {
-                            sprite_overflow = true;
+
+                    if (sprite_count_next < 8) {
+                        if (i == 0) {
+                            sprite_zero_hit_possible_next = true;
                         }
+                        secondary_oam_next[sprite_count_next] = *(OAM_Entry*)&oam[i * 4];
+                        sprite_count_next++;
                     }
                 }
-                sprite_count = oam_entry_count;
-                if (sprite_overflow) reg_status |= 0x20;
+
             }
         }
 
@@ -342,28 +493,34 @@ void PPU::clock() {
         }
 
         if (cycle == 340) {
-            for (uint8_t i = 0; i < sprite_count; i++) {
+            for (uint8_t i = 0; i < sprite_count_next; i++) {
                 uint16_t addr_lo, addr_hi;
                 uint8_t sprite_height = (reg_ctrl & 0x20) ? 16 : 8;
-                bool flip_vert = (secondary_oam[i].attribute & 0x80);
-                bool flip_horz = (secondary_oam[i].attribute & 0x40);
+                bool flip_vert = (secondary_oam_next[i].attribute & 0x80);
+                bool flip_horz = (secondary_oam_next[i].attribute & 0x40);
+                int16_t fetch_scanline = scanline + 1;
 
-                uint8_t row_in_sprite = scanline - secondary_oam[i].y;
+                int16_t row_in_sprite = fetch_scanline - secondary_oam_next[i].y - 1;
+                if (row_in_sprite < 0 || row_in_sprite >= sprite_height) {
+                    sprite_shifter_pattern_lo_next[i] = 0;
+                    sprite_shifter_pattern_hi_next[i] = 0;
+                    continue;
+                }
                 if (flip_vert) {
                     row_in_sprite = (sprite_height - 1) - row_in_sprite;
                 }
 
                 if (sprite_height == 8) {
                     uint16_t pattern_table = (reg_ctrl & 0x08) ? 0x1000 : 0x0000;
-                    addr_lo = pattern_table + (secondary_oam[i].tile_id * 16) + row_in_sprite;
+                    addr_lo = pattern_table + (secondary_oam_next[i].tile_id * 16) + (uint16_t)row_in_sprite;
                 } else {
-                    uint16_t pattern_table = (secondary_oam[i].tile_id & 0x01) ? 0x1000 : 0x0000;
-                    uint8_t tile_index = secondary_oam[i].tile_id & 0xFE;
+                    uint16_t pattern_table = (secondary_oam_next[i].tile_id & 0x01) ? 0x1000 : 0x0000;
+                    uint8_t tile_index = secondary_oam_next[i].tile_id & 0xFE;
                     if (row_in_sprite > 7) {
                         tile_index++;
                         row_in_sprite -= 8;
                     }
-                    addr_lo = pattern_table + (tile_index * 16) + row_in_sprite;
+                    addr_lo = pattern_table + (tile_index * 16) + (uint16_t)row_in_sprite;
                 }
                 addr_hi = addr_lo + 8;
 
@@ -371,27 +528,23 @@ void PPU::clock() {
                 uint8_t bits_hi = ppu_read(addr_hi);
 
                 if (flip_horz) {
-                    auto reverse_bits = [](uint8_t b) {
-                        b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-                        b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-                        b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-                        return b;
-                    };
-                    bits_lo = reverse_bits(bits_lo);
-                    bits_hi = reverse_bits(bits_hi);
+                    bits_lo = reverse_bits_u8(bits_lo);
+                    bits_hi = reverse_bits_u8(bits_hi);
                 }
 
-                sprite_shifter_pattern_lo[i] = bits_lo;
-                sprite_shifter_pattern_hi[i] = bits_hi;
+                sprite_shifter_pattern_lo_next[i] = bits_lo;
+                sprite_shifter_pattern_hi_next[i] = bits_hi;
             }
         }
     }
 
     if (scanline == 241 && cycle == 1) {
-        reg_status |= 0x80;
-        if (reg_ctrl & 0x80) {
-            if (bus) bus->nmi();
+        if (!suppress_vblank_set) {
+            reg_status |= 0x80;
+            nmi_occured = true;
         }
+        suppress_vblank_set = false;
+        update_nmi_state();
     }
 
     uint8_t bg_pixel = 0, bg_palette = 0;
@@ -399,6 +552,10 @@ void PPU::clock() {
         uint16_t bit_mux = 0x8000 >> fine_x_scroll;
         bg_pixel = (((bg_shifter_pattern_hi & bit_mux) > 0) << 1) | ((bg_shifter_pattern_lo & bit_mux) > 0);
         bg_palette = (((bg_shifter_attrib_hi & bit_mux) > 0) << 1) | ((bg_shifter_attrib_lo & bit_mux) > 0);
+    }
+    if (!(reg_mask & 0x02) && cycle >= 1 && cycle <= 8) {
+        bg_pixel = 0;
+        bg_palette = 0;
     }
 
     uint8_t sprite_pixel = 0, sprite_palette = 0, sprite_priority = 0;
@@ -419,6 +576,9 @@ void PPU::clock() {
             }
         }
     }
+    if (!(reg_mask & 0x04) && cycle >= 1 && cycle <= 8) {
+        sprite_pixel = 0;
+    }
 
     uint8_t final_pixel = 0, final_palette = 0;
     if (bg_pixel == 0 && sprite_pixel == 0) { final_pixel = 0; final_palette = 0; }
@@ -429,8 +589,10 @@ void PPU::clock() {
         else { final_pixel = bg_pixel; final_palette = bg_palette; }
 
         if (sprite_zero_hit_possible && sprite_zero_being_rendered && (reg_mask & 0x18) == 0x18) {
-            if (cycle - 1 >= 8 && cycle - 1 < 255) {
-                reg_status |= 0x40; // sprite zero hit
+            bool left_edge_enabled = (reg_mask & 0x02) && (reg_mask & 0x04);
+            if ((left_edge_enabled && cycle >= 1 && cycle <= 255) ||
+                (!left_edge_enabled && cycle >= 9 && cycle <= 255)) {
+                reg_status |= 0x40;
             }
         }
     }
@@ -442,6 +604,27 @@ void PPU::clock() {
         screen[scanline * 256 + (cycle - 1)] = nes_palette[color_index & 0x3F];
     }
 
+    if (cycle >= 1 && cycle <= 256 && (reg_mask & 0x10)) {
+        for (int i = 0; i < sprite_count; i++) {
+            if (secondary_oam[i].x > 0) {
+                secondary_oam[i].x--;
+            } else {
+                sprite_shifter_pattern_lo[i] <<= 1;
+                sprite_shifter_pattern_hi[i] <<= 1;
+            }
+        }
+    }
+
+    if (scanline == -1 && cycle == 338) {
+        odd_frame_cycle_skip_pending = odd_frame && ((reg_mask & 0x18) != 0);
+    }
+
+    if (scanline == -1 && cycle == 339 && odd_frame_cycle_skip_pending) {
+        // On odd frames with rendering enabled, pre-render dot 340 is skipped.
+        cycle = 340;
+        odd_frame_cycle_skip_pending = false;
+    }
+
     cycle++;
     if (cycle > 340) {
         cycle = 0;
@@ -449,6 +632,7 @@ void PPU::clock() {
         if (scanline > 260) {
             scanline = -1;
             frame_complete = true;
+            odd_frame = !odd_frame;
         }
     }
 }
